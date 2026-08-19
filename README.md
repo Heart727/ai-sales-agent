@@ -102,15 +102,19 @@ python verify_api.py
 
 对话和线索都存在项目根目录的 `sales_agent.db`（自动生成）。可以用任意 SQLite 工具打开看三张表：`sessions`（会话）、`messages`（消息）、`leads`（线索卡片）。
 
-## 部署到 Render（免费，不用绑信用卡）
+## 部署到 Zeabur（免费，不绑卡，国内直连）
 
-1. 去 https://render.com 用 GitHub 账号注册（不需要信用卡）
-2. 控制台点 **New → Blueprint** → 选择本仓库 → 确认
-3. Render 会自动读仓库里的 [render.yaml](render.yaml)，弹出让你填 `DEEPSEEK_API_KEY`（复制 .env 里的值填进去）→ 点 Deploy
-4. 等几分钟部署完成，访问 `https://ai-sales-agent.onrender.com` 即可
+1. 去 https://zeabur.com（或中文站 zeabur.cn）用 **GitHub 账号登录**（不需要信用卡）
+2. 控制台点 **新建项目** → **添加服务** → **Deploy Your Source Code** → 选择 `ai-sales-agent` 仓库
+3. Zeabur 自动识别 Python/FastAPI 并构建部署（如果没自动识别启动方式，在服务的「启动命令」填：`uvicorn main:app --host 0.0.0.0 --port $PORT`）
+4. 在服务的 **Variables** 里添加环境变量：
+   - `DEEPSEEK_API_KEY` = 你的 key（复制 .env 里的值）
+   - （可选）`DEEPSEEK_BASE_URL` = `https://api.deepseek.com/v1`、`DEEPSEEK_MODEL` = `deepseek-v4-pro`
+5. 在服务的 **网络/Domains** 里点 **生成域名**，得到 `xxx.zeabur.app` 免费域名（自带 HTTPS）
+6. 打开域名即可使用
 
-> ⚠️ Render 免费版的注意点（演示够用，商用不行）：
-> - 闲置 15 分钟后服务会休眠，下次访问要等 30~60 秒"冷启动"
+> ⚠️ 免费版注意点（演示够用）：
+> - 服务闲置一段时间会休眠，下次访问有几十秒"冷启动"
 > - 免费版没有持久化磁盘：**重新部署时 SQLite 数据会被清空**（应用启动时自动重建空表，不影响使用，只是旧线索会消失）
 
 ## API 一览
