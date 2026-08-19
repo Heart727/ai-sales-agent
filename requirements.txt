@@ -1,0 +1,17 @@
+# 项目依赖清单：新机器上一条命令装齐所有第三方库
+# 用法：pip install -r requirements.txt
+#
+# fastapi —— 后端 Web 框架（定义 API、处理 HTTP 请求）
+# uvicorn —— 服务器程序（负责把 FastAPI 应用跑起来，监听端口）
+# openai  —— 调用 DeepSeek API 用的官方 SDK（DeepSeek 是 OpenAI 兼容接口，
+#            只要把 base_url 指向 DeepSeek 就能用，不用自己拼 HTTP 请求）
+# python-dotenv —— 读取 .env 文件（把 API Key 等配置变成环境变量）
+# requests —— 发起 HTTP 请求的库（verify_api.py 自检脚本用）
+#
+# SQLite 是 Python 自带的（sqlite3 模块），不用写在这里。
+# 前端用原生 HTML/CSS/JS，也不需要安装任何东西。
+fastapi==0.141.1
+uvicorn==0.52.3
+openai==3.2.0
+python-dotenv==1.2.3
+requests==2.34.2

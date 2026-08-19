@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- viewport：手机上按设备宽度渲染 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>线索管理 - AI 销售助手</title>
+    <!-- 内嵌 emoji 图标：浏览器标签页小图标，不用单独放图片文件 -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <!-- ===== 顶栏：返回聊天页 ===== -->
+    <header class="topbar">
+        <div class="topbar-inner">
+            <h1>线索管理</h1>
+            <a class="btn" href="/">返回对话</a>
+        </div>
+    </header>
+
+    <!-- 线索卡片列表由 leads.js 动态渲染 -->
+    <main class="leads-wrap container" id="leadsWrap">
+        <div class="empty-state">加载中…</div>
+    </main>
+
+    <!-- 错误/成功提示条 -->
+    <div id="toast"></div>
+
+    <script src="/static/leads.js"></script>
+</body>
+</html>

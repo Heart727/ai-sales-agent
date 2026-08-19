@@ -1,0 +1,341 @@
+/* ============================================================
+   AI 销售助手 - 共享样式（聊天页 + 线索页共用）
+
+   设计原则（MVP）：
+   - 移动优先：先按手机窄屏设计，桌面端只是居中加宽
+   - 简洁中文界面，浅色主题，蓝色为主色
+   - CSS 变量统一管理颜色，改主题只改这里
+   ============================================================ */
+
+/* ---- 颜色变量：把常用颜色定义成变量，用 var(--xxx) 引用 ---- */
+:root {
+  --primary: #2563eb;        /* 主色：蓝色，按钮、用户气泡 */
+  --primary-dark: #1d4ed8;   /* 主色加深：按钮按下时 */
+  --bg: #f3f4f6;             /* 页面背景：浅灰 */
+  --card: #ffffff;           /* 卡片背景：白色 */
+  --text: #1f2937;           /* 正文文字：深灰 */
+  --text-light: #6b7280;     /* 次要文字：中灰 */
+  --border: #e5e7eb;         /* 边框：浅灰 */
+  --success: #16a34a;        /* 成功提示：绿色 */
+  --danger: #dc2626;         /* 危险操作：红色 */
+}
+
+/* ---- 基础重置：去掉浏览器默认边距，统一盒模型 ---- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ---- 页面基础 ---- */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+               "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* 内容容器：手机全宽，桌面端限宽居中 */
+.container {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 12px;
+}
+
+/* ============================================================
+   顶栏（聊天页和线索页共用）
+   ============================================================ */
+header.topbar {
+  position: sticky;          /* 吸顶：滚动时顶栏不动 */
+  top: 0;
+  z-index: 10;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-inner {
+  display: flex;             /* 弹性布局：子元素排一行 */
+  align-items: center;       /* 垂直居中 */
+  gap: 8px;                  /* 子元素间距 */
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 10px 12px;
+}
+
+.topbar h1 {
+  font-size: 17px;
+  flex: 1;                   /* 标题占满剩余空间 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;   /* 标题太长显示省略号 */
+}
+
+/* 顶栏里的通用按钮 */
+.topbar button, .topbar a.btn {
+  font-size: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;     /* <a> 标签去掉下划线 */
+  white-space: nowrap;
+}
+.topbar button:hover, .topbar a.btn:hover { background: var(--bg); }
+.topbar a.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.topbar a.btn.primary:hover { background: var(--primary-dark); }
+
+/* ============================================================
+   会话抽屉（点 ☰ 从左边滑出的历史会话列表）
+   ============================================================ */
+/* 半透明遮罩：盖住整个屏幕，点它关闭抽屉 */
+.drawer-mask {
+  position: fixed;
+  inset: 0;                  /* 上下左右全 0 = 铺满全屏 */
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  display: none;             /* 默认隐藏 */
+}
+.drawer-mask.open { display: block; }
+
+/* 抽屉本体：固定在左侧，宽度不超过屏幕的 85% */
+.drawer {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: min(320px, 85vw);   /* 取 320px 和屏宽85%里较小的 */
+  background: var(--card);
+  z-index: 21;
+  transform: translateX(-100%);   /* 默认移出屏幕外 */
+  transition: transform 0.25s;    /* 滑入滑出的动画 */
+  display: flex;
+  flex-direction: column;
+}
+.drawer.open { transform: translateX(0); }
+
+.drawer h2 { font-size: 15px; padding: 14px; border-bottom: 1px solid var(--border); }
+
+/* 会话列表滚动区域 */
+#sessionList { flex: 1; overflow-y: auto; }
+
+.session-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+}
+.session-item:hover { background: var(--bg); }
+.session-item.active { background: #eff6ff; }  /* 当前会话高亮：浅蓝 */
+
+.session-item .title {
+  font-size: 14px;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.session-item .time { font-size: 12px; color: var(--text-light); }
+.session-item .badge {
+  float: right;
+  font-size: 11px;
+  color: var(--success);
+  border: 1px solid var(--success);
+  border-radius: 10px;
+  padding: 0 8px;
+}
+/* 空状态提示 */
+.drawer .empty { padding: 20px 14px; color: var(--text-light); font-size: 14px; }
+
+/* ============================================================
+   聊天区
+   ============================================================ */
+/* 聊天区占满顶栏和输入栏之间的空间，消息多了就在内部滚动 */
+.chat-area {
+  height: calc(100vh - 105px);   /* 100vh=视口高度，减去顶栏+输入栏的高度 */
+  overflow-y: auto;
+  padding: 16px 12px 8px;
+  scroll-behavior: smooth;       /* 新消息时平滑滚到底部 */
+}
+
+/* 一条消息 = 头像 + 气泡 */
+.msg { display: flex; gap: 8px; margin-bottom: 14px; }
+
+/* 头像：一个圆形小图标，AI 和用户颜色不同 */
+.msg .avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;            /* 头像不允许被压缩 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: #fff;
+}
+.msg.user { flex-direction: row-reverse; }   /* 用户消息靠右：头像和气泡左右对调 */
+.msg.user .avatar { background: var(--primary); }     /* 用户：蓝 */
+.msg.assistant .avatar { background: #10b981; }       /* AI：绿 */
+
+/* 气泡 */
+.msg .bubble {
+  max-width: 78%;            /* 气泡最长占 78% 宽，超长自动换行 */
+  padding: 9px 13px;
+  border-radius: 12px;
+  font-size: 15px;
+  white-space: pre-wrap;     /* 保留 AI 回复里的换行 */
+  word-break: break-word;    /* 长英文/链接也能换行 */
+}
+.msg.user .bubble { background: var(--primary); color: #fff; border-top-right-radius: 4px; }
+.msg.assistant .bubble { background: var(--card); border: 1px solid var(--border); border-top-left-radius: 4px; }
+
+/* AI 正在输入中的提示（三个跳动的小点） */
+.typing-dots span {
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--text-light);
+  animation: bounce 1.2s infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {                      /* 小点上下跳动的动画 */
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-5px); }
+}
+
+/* 线索已生成提示条（绿色横幅） */
+.lead-notice {
+  margin: 8px 0 14px;
+  padding: 10px 13px;
+  background: #f0fdf4;       /* 浅绿背景 */
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--success);
+}
+.lead-notice a { color: var(--primary); font-weight: 600; }
+
+/* ============================================================
+   输入栏（固定在屏幕底部）
+   ============================================================ */
+.composer {
+  position: sticky;
+  bottom: 0;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+.composer-inner {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 10px 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.composer input {
+  flex: 1;                   /* 输入框占满剩余宽度 */
+  padding: 10px 14px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: 20px;       /* 圆角胶囊形状 */
+  outline: none;
+}
+.composer input:focus { border-color: var(--primary); }
+
+.composer button {
+  font-size: 14px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+}
+#sendBtn { background: var(--primary); color: #fff; }
+#sendBtn:hover { background: var(--primary-dark); }
+#sendBtn:disabled { background: #93c5fd; cursor: not-allowed; }  /* 等待 AI 时禁用 */
+
+#endBtn { background: var(--card); color: var(--text-light); border: 1px solid var(--border); }
+
+/* ============================================================
+   提示条（错误/成功消息，浮在顶部，几秒后消失）
+   ============================================================ */
+#toast {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  max-width: 90vw;
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #fff;
+  display: none;
+}
+#toast.error { display: block; background: var(--danger); }
+#toast.success { display: block; background: var(--success); }
+
+/* ============================================================
+   线索页：卡片列表
+   ============================================================ */
+.leads-wrap { padding: 16px 12px; }
+
+.lead-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.lead-card .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.lead-card .summary { font-size: 15px; font-weight: 600; }
+.lead-card .time { font-size: 12px; color: var(--text-light); }
+
+/* 卡片里的信息行：左边标签、右边内容 */
+.lead-card .row {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  margin-top: 6px;
+}
+.lead-card .row .label {
+  color: var(--text-light);
+  flex-shrink: 0;
+  width: 72px;
+}
+.lead-card .row .value { flex: 1; word-break: break-word; }
+
+/* 删除按钮：小号红字 */
+.lead-card .delete-btn {
+  font-size: 13px;
+  color: var(--danger);
+  background: none;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.lead-card .delete-btn:hover { background: #fef2f2; }
+
+/* 空状态 */
+.empty-state {
+  text-align: center;
+  color: var(--text-light);
+  padding: 60px 0;
+  font-size: 15px;
+}
+
+/* ---- 桌面端微调：宽屏下字号稍大、卡片更松 ---- */
+@media (min-width: 768px) {
+  .msg .bubble { font-size: 16px; }
+  .lead-card { padding: 18px; }
+}

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- viewport 这行是"手机上能用"的关键：告诉手机浏览器按设备宽度渲染，别把桌面版缩小塞进屏幕 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI 销售助手</title>
+    <!-- 内嵌 emoji 图标：浏览器标签页小图标，不用单独放图片文件 -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <!-- ===== 顶栏：标题 + 会话列表按钮 + 新对话 + 线索管理入口 ===== -->
+    <header class="topbar">
+        <div class="topbar-inner">
+            <!-- ☰ 按钮：打开左侧历史会话抽屉 -->
+            <button id="menuBtn" title="历史会话">☰</button>
+            <h1>AI 销售助手</h1>
+            <!-- 链接形式跳转到线索管理页 -->
+            <a class="btn primary" href="/leads">线索管理</a>
+            <button id="newChatBtn">新对话</button>
+        </div>
+    </header>
+
+    <!-- ===== 历史会话抽屉（点 ☰ 滑出） ===== -->
+    <div class="drawer-mask" id="drawerMask"></div>
+    <aside class="drawer" id="drawer">
+        <h2>历史会话</h2>
+        <!-- 会话列表由 app.js 动态渲染 -->
+        <div id="sessionList"></div>
+    </aside>
+
+    <!-- ===== 聊天区：消息由 app.js 动态渲染 ===== -->
+    <main class="chat-area" id="chatArea"></main>
+
+    <!-- ===== 底部输入栏 ===== -->
+    <div class="composer">
+        <div class="composer-inner">
+            <!-- 结束对话按钮：手动生成线索卡片（AI 没自动生成时兜底） -->
+            <button id="endBtn" title="结束对话并生成线索">结束对话</button>
+            <!-- 输入框：按回车发送 -->
+            <input id="msgInput" type="text" placeholder="输入消息，按回车发送…" autocomplete="off">
+            <button id="sendBtn">发送</button>
+        </div>
+    </div>
+
+    <!-- 错误/成功提示条 -->
+    <div id="toast"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
