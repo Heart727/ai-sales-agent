@@ -1,0 +1,21 @@
+# Render 部署配置（Blueprint）：让 Render 读这个文件自动完成部署设置
+# 用法：Render 控制台 → New → Blueprint → 选这个仓库，它会按这里自动配好一切
+# 参考文档：https://render.com/docs/blueprint-spec
+
+services:
+  # 一个 Web 服务：跑 FastAPI
+  - type: web
+    name: ai-sales-agent          # 服务名（会出现在 URL 里）
+    runtime: python
+    plan: free                    # 免费套餐
+    buildCommand: pip install -r requirements.txt   # 部署时执行的安装命令
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT  # 启动命令（$PORT 由 Render 提供，不能写死 8000）
+    envVars:
+      # API Key 属于机密：sync: false 表示不从仓库读，
+      # 部署时 Render 会弹窗让你在网页上手动填写（填完只存在 Render 上）
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com/v1
+      - key: DEEPSEEK_MODEL
+        value: deepseek-v4-pro
