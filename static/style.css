@@ -23,6 +23,10 @@
 /* ---- 基础重置：去掉浏览器默认边距，统一盒模型 ---- */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* 修复：HTML 的 hidden 属性（隐藏元素）默认会被其他 display 样式覆盖，
+   加上 !important 保证 hidden 的元素一定不显示 */
+[hidden] { display: none !important; }
+
 /* ---- 页面基础 ---- */
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
