@@ -17,8 +17,8 @@
             <!-- ☰ 按钮：打开左侧历史会话抽屉 -->
             <button id="menuBtn" title="历史会话">☰</button>
             <h1>AI 销售助手</h1>
-            <!-- 链接形式跳转到线索管理页 -->
-            <a class="btn primary" href="/leads">线索管理</a>
+            <!-- 线索管理入口：默认隐藏，只有登录了的管理员才显示（访客不需要看到它） -->
+            <a class="btn primary" id="leadsLink" href="/leads" hidden>线索管理</a>
             <button id="newChatBtn">新对话</button>
         </div>
     </header>

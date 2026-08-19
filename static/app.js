@@ -266,3 +266,15 @@ drawerMask.onclick = closeDrawer;
 
 // ===== 页面打开时：自动开始一个新对话 =====
 newChat();
+
+// 只有登录了的管理员才显示"线索管理"入口：
+// 调 /api/auth/me 试一下，能查到用户就说明浏览器里有登录令牌。
+// 访客（未登录）会得到 401，入口保持隐藏。
+(async () => {
+  try {
+    await api("/api/auth/me");
+    document.getElementById("leadsLink").hidden = false;
+  } catch (err) {
+    /* 访客未登录：什么都不做，保持隐藏 */
+  }
+})();
