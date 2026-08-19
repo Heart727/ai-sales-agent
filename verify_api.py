@@ -151,6 +151,26 @@ check("不存在的会话返回 404", r.status_code == 404, f"实际 {r.status_c
 r = guest.post(f"{BASE}/api/sessions/{sid}/messages", json={"content": "   "}, timeout=10)
 check("空消息返回 400", r.status_code == 400, f"实际 {r.status_code}")
 
+# ===== 12. 限流实测：连发消息直到被 429 拦截 =====
+# 前面的检查已经消耗了本分钟的部分配额（每 IP 每分钟 8 条），
+# 这里继续连发空消息（空消息也会计配额，但不会调 AI、不花钱），
+# 应该在几次之内收到 429。
+# ⚠️ 注意：跑自检时请不要同时在浏览器里聊天，否则配额被聊天占用，这里数字会变。
+print("\n[12] 限流实测：连发消息直到 429")
+got_429 = False
+detail_429 = ""
+for i in range(12):
+    r = guest.post(f"{BASE}/api/sessions/{sid}/messages", json={"content": "   "}, timeout=10)
+    if r.status_code == 429:
+        got_429 = True
+        detail_429 = r.json().get("detail", "")
+        retry_after = r.headers.get("Retry-After")
+        check("响应带 Retry-After 头", retry_after is not None, "没有 Retry-After 头")
+        break
+check("收到 429 拦截", got_429, "连发 12 条都没被拦（如果刚才在聊天，请稍等一分钟后重跑）")
+if got_429:
+    print(f"      429 提示：{detail_429}")
+
 # 总结
 print("\n" + "=" * 50)
 print(f"结果：{passed} 项通过，{failed} 项失败")

@@ -16,6 +16,7 @@
 4. DeepSeek API（OpenAI 兼容接口，base_url=https://api.deepseek.com/v1，模型 deepseek-v4-pro，key 从 .env 读取）
 5. 界面简洁中文、移动端可用；线索在独立页面 /leads 展示
 6. 登录系统：访客聊天无需登录；/leads 和线索接口需登录（注册要邀请码 AUTH_SIGNUP_CODE，密码加盐哈希存库，登录状态存 cookie 令牌）；访客历史会话只存自己浏览器（localStorage）
+7. 防刷限流（商用标准）：分钟限流/日配额/会话上限/全局兜底四道防线，429+Retry-After，日配额超自动封禁 IP，计数存 SQLite 重启不丢，TRUST_PROXY 防 XFF 伪造
 
 ## 技术栈
 
@@ -33,6 +34,7 @@ ai-sales-agent/
 ├── database.py      # 数据库层：建表、增删改查（其他模块不直接写 SQL）
 ├── ai.py            # AI 逻辑：生成回复 + 判断/提取线索 JSON
 ├── auth.py          # 认证逻辑：密码加盐哈希、令牌生成、邀请码校验
+├── rate_limit.py    # 防刷限流：四道防线 + 自动封禁 + IP 防伪造
 ├── config.py        # 读 .env 配置（API key、模型、数据库路径、邀请码）
 ├── verify_api.py    # 一键自检脚本：不启动浏览器也能验证所有接口
 ├── requirements.txt
@@ -55,6 +57,8 @@ ai-sales-agent/
 - leads：线索卡片（id、所属会话、需求、预算、时间、联系方式、摘要、时间）
 - users：用户（id、用户名、密码哈希、盐、时间）——不存明文密码
 - tokens：登录令牌（token、所属用户、时间）
+- rate_limits：限流计数（key、计数、窗口起点、时间）——重启不丢
+- bans：封禁（ip、原因、封到何时、时间）
 
 ## 开发约定
 

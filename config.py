@@ -31,6 +31,24 @@ if DEEPSEEK_MODEL == "deepseek-chat":
 # 如果没有邀请码限制，任何人都能注册账号看线索，等于没锁门。
 AUTH_SIGNUP_CODE = os.getenv("AUTH_SIGNUP_CODE", "")
 
+# ===== 防刷限流配置（商用标准：全部可用环境变量覆盖，方便部署时调参）=====
+# 每个 IP 每分钟最多发几条消息（正常人类聊天远达不到）
+RATE_MSG_PER_MINUTE = int(os.getenv("RATE_MSG_PER_MINUTE", "8"))
+# 每个 IP 每天最多发几条消息（防慢速刷：一分钟一条刷一天也会封）
+RATE_MSG_PER_DAY = int(os.getenv("RATE_MSG_PER_DAY", "100"))
+# 每个 IP 每天最多新建几个会话
+RATE_SESSIONS_PER_DAY = int(os.getenv("RATE_SESSIONS_PER_DAY", "20"))
+# 每个会话最多几条消息（一次真实销售对话 10~20 条就结束了）
+RATE_MSG_PER_SESSION = int(os.getenv("RATE_MSG_PER_SESSION", "60"))
+# 全局兜底：整个服务每天最多处理多少条消息（防多 IP 分布式攻击打穿 AI 额度）
+RATE_GLOBAL_MSG_PER_DAY = int(os.getenv("RATE_GLOBAL_MSG_PER_DAY", "5000"))
+# 触发日配额封禁的时长（小时）
+BAN_HOURS = int(os.getenv("BAN_HOURS", "24"))
+# 是否信任反向代理传来的 X-Forwarded-For 头。
+# 直连部署（默认）：False——攻击者伪造 XFF 无效，用真实连接 IP 计数；
+# 部署在 Nginx/云网关后面：必须设 True，否则所有请求都显示网关 IP。
+TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() in ("1", "true", "yes")
+
 # ===== 数据库配置 =====
 # SQLite 数据库就是一个文件，放在项目根目录下，叫 sales_agent.db
 # __file__ 是当前文件（config.py）的完整路径，dirname 取它所在的目录 = 项目根目录

@@ -8,13 +8,14 @@ main.py 自己不写 SQL，也不直接调 DeepSeek，只负责"接请求、调�
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import ai
 import auth
 import database as db
+import rate_limit
 from config import AUTH_SIGNUP_CODE
 
 
@@ -29,6 +30,18 @@ app = FastAPI(title="AI 销售助手", lifespan=lifespan)
 
 # 挂载静态文件目录：浏览器访问 /static/style.css 就能拿到文件
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ===== 限流统一响应：任何接口抛 RateLimited 异常，统一转成 429 =====
+# Retry-After 是 HTTP 标准响应头：告诉客户端"建议多久后再试"，
+# 浏览器、爬虫、脚本都认识这个头，比只回一句中文更规范。
+@app.exception_handler(rate_limit.RateLimited)
+async def rate_limited_handler(request: Request, exc: rate_limit.RateLimited):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": exc.detail},
+        headers={"Retry-After": str(exc.retry_after)},
+    )
 
 
 # ===== 前端页面 =====
@@ -166,8 +179,15 @@ def me(user: dict = Depends(current_user)):
 # ==================== 会话相关接口 ====================
 
 @app.post("/api/sessions")
-def create_session():
-    """新建一个会话，返回会话 id（前端拿到 id 后用它发消息）"""
+def create_session(request: Request):
+    """
+    新建一个会话，返回会话 id（前端拿到 id 后用它发消息）。
+    ⚠️ 防刷：每个 IP 每天建的会话数有限，超限 429 并自动封禁。
+    """
+    ip = rate_limit.get_client_ip(request)
+    rate_limit.check_ban(ip)
+    rate_limit.check_session_creation(ip)
+
     session_id = db.create_session()
     return {"id": session_id, "title": "新对话"}
 
@@ -196,21 +216,30 @@ def get_messages(session_id: int):
 # ==================== 聊天核心接口 ====================
 
 @app.post("/api/sessions/{session_id}/messages")
-def send_message(session_id: int, req: ChatRequest):
+def send_message(session_id: int, req: ChatRequest, request: Request):
     """
     访客发一条消息，返回 AI 的回复。这是整个应用的核心接口，流程：
 
+    0. 防刷检查（在一切业务逻辑和 AI 调用之前，被拒的请求不花一分钱 API 费）
     1. 把访客的消息存进数据库
     2. 取出这个会话的全部历史（多轮对话记忆的关键）
     3. 带上历史调 DeepSeek，生成 AI 回复并入库
     4. 如果这个会话还没有线索卡片，让 AI 判断 4 项信息是否集齐：
        集齐 → 生成线索卡片入库，一起返回给前端
     """
+    # ===== 防刷四道防线（顺序：封禁 → 分钟限流 → 日配额 → 全局兜底 → 会话上限）=====
+    ip = rate_limit.get_client_ip(request)
+    rate_limit.check_ban(ip)
+    rate_limit.check_message_rate(ip)
+    rate_limit.check_daily_message_quota(ip)
+    rate_limit.check_global_quota(ip)
+
     content = req.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="消息不能为空")
     if db.get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="会话不存在")
+    rate_limit.check_session_message_cap(session_id)
 
     # 第 1 步：存访客消息；如果是第一句话，顺手把会话标题设成它的前 20 个字
     db.add_message(session_id, "user", content)
@@ -259,12 +288,18 @@ def send_message(session_id: int, req: ChatRequest):
 
 
 @app.post("/api/sessions/{session_id}/end")
-def end_session(session_id: int):
+def end_session(session_id: int, request: Request):
     """
     手动结束对话（兜底）：访客点「结束对话」按钮时调用。
     不管 4 项信息齐不齐都生成线索卡片，缺的字段填"未提供"。
     如果这个会话已经有卡片了，直接返回现有卡片（不会重复生成）。
+    ⚠️ 这个接口也要调 AI，同样过防刷检查（在 AI 调用之前拦截）。
     """
+    ip = rate_limit.get_client_ip(request)
+    rate_limit.check_ban(ip)
+    rate_limit.check_message_rate(ip)
+    rate_limit.check_daily_message_quota(ip)
+
     if db.get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="会话不存在")
 

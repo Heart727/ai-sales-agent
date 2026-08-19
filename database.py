@@ -83,6 +83,24 @@ def init_db():
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+
+            -- 限流计数表：记录每个 IP 每分钟/每天 发了多少消息、建了多少会话。
+            -- 存数据库而不是内存：服务重启后计数不丢（商用标准，防重启绕限流）。
+            -- key 例："msg:min:1.2.3.4" / "msg:day:1.2.3.4" / "session:day:1.2.3.4"
+            CREATE TABLE IF NOT EXISTS rate_limits (
+                key          TEXT PRIMARY KEY,
+                count        INTEGER NOT NULL DEFAULT 0,        -- 当前窗口内的次数
+                window_start TEXT NOT NULL,                     -- 窗口起点（如 "2026-08-19 10:30"）
+                updated_at   TEXT NOT NULL
+            );
+
+            -- 封禁表：触发日配额等严重超限的 IP 被自动封禁一段时间
+            CREATE TABLE IF NOT EXISTS bans (
+                ip           TEXT PRIMARY KEY,
+                reason       TEXT NOT NULL,                     -- 封禁原因（审计用）
+                banned_until TEXT NOT NULL,                     -- 封到什么时候
+                created_at   TEXT NOT NULL
+            );
             """
         )
         conn.commit()
@@ -299,5 +317,82 @@ def delete_token(token: str) -> None:
     try:
         conn.execute("DELETE FROM tokens WHERE token = ?", (token,))
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ==================== 限流计数（rate_limits）相关操作 ====================
+
+def increment_rate(key: str, window_start: str, limit: int) -> tuple[bool, int]:
+    """
+    给某个计数 key 加 1，返回 (是否超限, 当前计数)。
+
+    窗口机制（滑动窗口的简化版）：
+    - window_start 是当前窗口的起点字符串（如分钟窗口 "2026-08-19 10:30"）
+    - 如果库里存的窗口起点和当前窗口不同 → 说明上一轮窗口已过，计数从 1 重新开始
+    - 相同 → 计数 +1
+
+    并发安全：用 BEGIN IMMEDIATE 独占写事务。
+    SQLite 同一时刻只允许一个写事务，两个请求同时计数也不会互相覆盖丢数。
+    """
+    conn = get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT count, window_start FROM rate_limits WHERE key = ?", (key,)
+        ).fetchone()
+        if row is None or row["window_start"] != window_start:
+            count = 1  # 新 key 或窗口已切换，重新计数
+        else:
+            count = row["count"] + 1
+        conn.execute(
+            """INSERT INTO rate_limits (key, count, window_start, updated_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET count = ?, window_start = ?, updated_at = ?""",
+            (key, count, window_start, _now(), count, window_start, _now()),
+        )
+        # 顺手清理 2 天前的僵尸计数行，防止表无限变大
+        conn.execute(
+            "DELETE FROM rate_limits WHERE updated_at < datetime('now', '-2 days')"
+        )
+        conn.commit()
+        return (count > limit, count)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ==================== 封禁（bans）相关操作 ====================
+
+def ban_ip(ip: str, reason: str, until: str) -> None:
+    """封禁某个 IP 到指定时间（重复封禁会覆盖并顺延）"""
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO bans (ip, reason, banned_until, created_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(ip) DO UPDATE SET reason = ?, banned_until = ?""",
+            (ip, reason, until, _now(), reason, until),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_ban(ip: str) -> dict | None:
+    """查询某个 IP 的封禁记录；已过期自动清除并返回 None"""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM bans WHERE ip = ?", (ip,)).fetchone()
+        if row is None:
+            return None
+        if row["banned_until"] <= _now():
+            # 封禁已过期：删掉记录，当作没封过
+            conn.execute("DELETE FROM bans WHERE ip = ?", (ip,))
+            conn.commit()
+            return None
+        return dict(row)
     finally:
         conn.close()
