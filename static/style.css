@@ -334,6 +334,92 @@ header.topbar {
   font-size: 15px;
 }
 
+/* ============================================================
+   登录页
+   ============================================================ */
+/* 整个登录页垂直水平居中 */
+.auth-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 360px;          /* 手机上全宽，桌面端限宽的小卡片 */
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 22px;
+}
+.auth-card h1 { font-size: 20px; text-align: center; }
+.auth-sub { font-size: 13px; color: var(--text-light); text-align: center; margin: 6px 0 18px; }
+
+/* 登录/注册标签 */
+.auth-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.auth-tabs button {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  cursor: pointer;
+}
+.auth-tabs button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+/* 表单输入框和主按钮 */
+.auth-card form { display: flex; flex-direction: column; gap: 10px; }
+.auth-card input {
+  padding: 10px 13px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+.auth-card input:focus { border-color: var(--primary); }
+.auth-card .primary-btn {
+  padding: 10px 0;
+  font-size: 15px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+.auth-card .primary-btn:hover { background: var(--primary-dark); }
+
+/* 错误提示文字 */
+#authError {
+  display: none;
+  margin-top: 12px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--danger);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+}
+#authError.show { display: block; }
+
+/* 返回聊天链接 */
+.back-link {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--text-light);
+}
+
+/* 顶栏里的用户名显示 */
+#userName { font-size: 13px; color: var(--text-light); }
+
 /* ---- 桌面端微调：宽屏下字号稍大、卡片更松 ---- */
 @media (min-width: 768px) {
   .msg .bubble { font-size: 16px; }

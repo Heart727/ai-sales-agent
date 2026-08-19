@@ -15,6 +15,7 @@
    - 「结束对话」按钮兜底：信息不齐也生成，缺的字段标"未提供"
 4. DeepSeek API（OpenAI 兼容接口，base_url=https://api.deepseek.com/v1，模型 deepseek-v4-pro，key 从 .env 读取）
 5. 界面简洁中文、移动端可用；线索在独立页面 /leads 展示
+6. 登录系统：访客聊天无需登录；/leads 和线索接口需登录（注册要邀请码 AUTH_SIGNUP_CODE，密码加盐哈希存库，登录状态存 cookie 令牌）；访客历史会话只存自己浏览器（localStorage）
 
 ## 技术栈
 
@@ -28,31 +29,36 @@
 
 ```
 ai-sales-agent/
-├── main.py          # FastAPI 入口 + 全部 API 路由
+├── main.py          # FastAPI 入口 + 全部 API 路由（含登录接口和权限保护）
 ├── database.py      # 数据库层：建表、增删改查（其他模块不直接写 SQL）
 ├── ai.py            # AI 逻辑：生成回复 + 判断/提取线索 JSON
-├── config.py        # 读 .env 配置（API key、模型、数据库路径）
+├── auth.py          # 认证逻辑：密码加盐哈希、令牌生成、邀请码校验
+├── config.py        # 读 .env 配置（API key、模型、数据库路径、邀请码）
 ├── verify_api.py    # 一键自检脚本：不启动浏览器也能验证所有接口
 ├── requirements.txt
 ├── README.md        # 怎么配 API key、怎么运行
 ├── .env.example     # 配置模板（复制成 .env 后填真实值）
 └── static/
     ├── index.html   # 聊天页（/）
-    ├── leads.html   # 线索管理页（/leads）
-    ├── style.css    # 两页共享样式
-    ├── app.js       # 聊天页逻辑
-    └── leads.js     # 线索页逻辑
+    ├── leads.html   # 线索管理页（/leads，需登录）
+    ├── login.html   # 登录/注册页（/login）
+    ├── style.css    # 共享样式
+    ├── app.js       # 聊天页逻辑（历史会话存 localStorage）
+    ├── leads.js     # 线索页逻辑（未登录跳 /login）
+    └── login.js     # 登录/注册逻辑
 ```
 
-## 数据库设计（三张表）
+## 数据库设计（五张表）
 
 - sessions：会话（id、标题、创建时间）
 - messages：消息（id、所属会话、角色 user/assistant、内容、时间）
 - leads：线索卡片（id、所属会话、需求、预算、时间、联系方式、摘要、时间）
+- users：用户（id、用户名、密码哈希、盐、时间）——不存明文密码
+- tokens：登录令牌（token、所属用户、时间）
 
 ## 开发约定
 
-- MVP 无登录，任何人打开页面都能用（演示用）
+- 访客聊天完全开放；线索页/线索接口/会话列表接口需登录（注册要邀请码）
 - 代码面向编程小白，关键处有详尽中文注释
 - 错误处理不静默失败：AI 调用失败要提示用户；JSON 解析失败要打日志
 - 每完成一个功能就运行验证，验证通过再进下一个

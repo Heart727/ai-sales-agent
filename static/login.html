@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- viewport：手机上按设备宽度渲染 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登录 - AI 销售助手</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <!-- 居中的登录卡片 -->
+    <main class="auth-wrap">
+        <div class="auth-card">
+            <h1>线索管理登录</h1>
+            <p class="auth-sub">访客聊天不需要登录；只有看线索的管理员需要</p>
+
+            <!-- 登录/注册 两个标签切换 -->
+            <div class="auth-tabs">
+                <button id="tabLogin" class="active">登录</button>
+                <button id="tabRegister">注册</button>
+            </div>
+
+            <!-- 登录表单 -->
+            <form id="loginForm">
+                <input type="text" name="username" placeholder="用户名" autocomplete="username" required>
+                <input type="password" name="password" placeholder="密码" autocomplete="current-password" required>
+                <button type="submit" class="primary-btn">登 录</button>
+            </form>
+
+            <!-- 注册表单（默认隐藏） -->
+            <form id="registerForm" hidden>
+                <input type="text" name="username" placeholder="用户名（2~20 个字符）" autocomplete="username" required>
+                <input type="password" name="password" placeholder="密码（至少 6 位）" autocomplete="new-password" required>
+                <input type="text" name="signup_code" placeholder="注册邀请码（找管理员要）" required>
+                <button type="submit" class="primary-btn">注册并登录</button>
+            </form>
+
+            <!-- 错误提示区 -->
+            <div id="authError"></div>
+
+            <a class="back-link" href="/">← 返回聊天</a>
+        </div>
+    </main>
+
+    <script src="/static/login.js"></script>
+</body>
+</html>

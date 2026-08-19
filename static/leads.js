@@ -1,13 +1,21 @@
 /**
  * 线索管理页逻辑：拉取线索列表 → 渲染成卡片 → 支持删除。
  *
+ * ⚠️ 本页需要登录：打开时先调 /api/auth/me 检查登录状态，
+ * 未登录（401）自动跳转到登录页。线索的增删接口后端也会二次校验，
+ * 前端跳转只是体验，真正的安全由后端保证。
+ *
  * 用到的后端接口：
- *   GET    /api/leads           线索列表（最新的在前）
- *   DELETE /api/leads/{id}      删除一张线索卡片
+ *   GET    /api/auth/me         当前登录用户（未登录返回 401）
+ *   POST   /api/auth/logout     登出
+ *   GET    /api/leads           线索列表（需登录）
+ *   DELETE /api/leads/{id}      删除一张线索卡片（需登录）
  */
 
 const leadsWrap = document.getElementById("leadsWrap");
 const toast = document.getElementById("toast");
+const userName = document.getElementById("userName");
+const logoutBtn = document.getElementById("logoutBtn");
 
 /** 顶部提示条（和聊天页一样的小工具） */
 function showToast(text, type = "error") {
@@ -16,11 +24,15 @@ function showToast(text, type = "error") {
   setTimeout(() => { toast.className = ""; }, 2500);
 }
 
-/** 统一请求封装：非 2xx 状态自动把后端的 detail 转成错误抛出 */
+/** 统一请求封装：非 2xx 状态自动把后端的 detail 转成错误抛出（附上状态码） */
 async function api(url, options = {}) {
   const resp = await fetch(url, options);
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.detail || `请求失败（${resp.status}）`);
+  if (!resp.ok) {
+    const e = new Error(data.detail || `请求失败（${resp.status}）`);
+    e.status = resp.status;
+    throw e;
+  }
   return data;
 }
 
@@ -77,6 +89,11 @@ async function loadLeads() {
       card.querySelector(".delete-btn").onclick = () => deleteLead(card);
     });
   } catch (err) {
+    // 未登录/登录过期：跳去登录页
+    if (err.status === 401) {
+      location.href = "/login";
+      return;
+    }
     leadsWrap.innerHTML = `<div class="empty-state">加载失败：${escapeHtml(err.message)}</div>`;
   }
 }
@@ -92,9 +109,31 @@ async function deleteLead(card) {
     // 删光了就重新渲染，显示空状态提示
     if (leadsWrap.querySelectorAll(".lead-card").length === 0) loadLeads();
   } catch (err) {
+    if (err.status === 401) {
+      location.href = "/login";
+      return;
+    }
     showToast("删除失败：" + err.message);
   }
 }
 
-// 页面打开就加载
-loadLeads();
+// 登出按钮：调登出接口（后端删除令牌）→ 回登录页
+logoutBtn.onclick = async () => {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch (err) {
+    /* 登出失败也照常跳登录页（本地 cookie 失效即可） */
+  }
+  location.href = "/login";
+};
+
+// 页面打开：先检查登录状态 → 已登录显示用户名并加载线索；未登录跳登录页
+(async () => {
+  try {
+    const me = await api("/api/auth/me");
+    userName.textContent = me.username;
+    loadLeads();
+  } catch (err) {
+    location.href = "/login";
+  }
+})();

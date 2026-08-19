@@ -66,6 +66,23 @@ def init_db():
                 created_at  TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
             );
+
+            -- 用户表（登录系统）：密码只存哈希值，不存明文
+            CREATE TABLE IF NOT EXISTS users (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                username      TEXT NOT NULL UNIQUE,             -- 用户名（UNIQUE：不允许重名）
+                password_hash TEXT NOT NULL,                    -- 密码哈希（经过加密处理的密码，看不懂原文）
+                salt          TEXT NOT NULL,                    -- 盐：每个用户随机一串字符，掺进密码一起哈希
+                created_at    TEXT NOT NULL
+            );
+
+            -- 登录令牌表：登录成功后发一个随机令牌，浏览器每次带它来证明身份
+            CREATE TABLE IF NOT EXISTS tokens (
+                token      TEXT PRIMARY KEY,                    -- 随机令牌（本身就是主键）
+                user_id    INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
             """
         )
         conn.commit()
@@ -214,5 +231,73 @@ def delete_lead(lead_id: int) -> bool:
         cur = conn.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
         conn.commit()
         return cur.rowcount > 0  # rowcount = 实际删掉的行数
+    finally:
+        conn.close()
+
+
+# ==================== 用户（users）相关操作 ====================
+
+def create_user(username: str, password_hash: str, salt: str) -> int:
+    """新建一个用户（密码只存哈希和盐，不存明文），返回用户 id"""
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?)",
+            (username, password_hash, salt, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def get_user_by_username(username: str) -> dict | None:
+    """按用户名查用户，不存在返回 None"""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+# ==================== 登录令牌（tokens）相关操作 ====================
+
+def create_token(token: str, user_id: int) -> None:
+    """存一个登录令牌（登录成功后调用）"""
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO tokens (token, user_id, created_at) VALUES (?, ?, ?)",
+            (token, user_id, _now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_by_token(token: str) -> dict | None:
+    """按令牌查用户（每次受保护的请求都靠它确认"你是谁"），令牌无效返回 None"""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """SELECT u.* FROM users u
+               JOIN tokens t ON t.user_id = u.id
+               WHERE t.token = ?""",
+            (token,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_token(token: str) -> None:
+    """删除一个登录令牌（登出时调用，令牌立刻失效）"""
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM tokens WHERE token = ?", (token,))
+        conn.commit()
     finally:
         conn.close()

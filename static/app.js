@@ -85,7 +85,25 @@ function appendTyping() {
   return msg;
 }
 
-/** 渲染会话抽屉里的历史会话列表 */
+/**
+ * 读取"本浏览器创建过的会话"（存在 localStorage 里，只属于这台设备）。
+ * 为什么放浏览器而不是服务器：会话列表接口是"老板视角"（需登录），
+ * 访客不应该看到其他访客的会话，所以访客自己的历史只存在自己浏览器里。
+ */
+function loadMySessions() {
+  try {
+    return JSON.parse(localStorage.getItem("my_sessions") || "[]");
+  } catch {
+    return []; // 本地数据损坏时兜底为空列表
+  }
+}
+
+/** 把会话列表写回 localStorage */
+function saveMySessions(list) {
+  localStorage.setItem("my_sessions", JSON.stringify(list));
+}
+
+/** 渲染会话抽屉里的历史会话列表（只渲染本浏览器创建过的） */
 function renderSessions(sessions, activeId) {
   if (sessions.length === 0) {
     sessionList.innerHTML = '<div class="empty">还没有历史会话，点"新对话"开始吧</div>';
@@ -96,10 +114,8 @@ function renderSessions(sessions, activeId) {
     const item = document.createElement("button");
     item.className = "session-item" + (s.id === activeId ? " active" : "");
 
-    // 标题 + 时间 + "已生成线索"标记（有线索卡片的会话带小徽标）
-    const badge = s.has_lead ? '<span class="badge">已生成线索</span>' : "";
     item.innerHTML =
-      `<div class="title">${escapeHtml(s.title)}${badge}</div>` +
+      `<div class="title">${escapeHtml(s.title)}</div>` +
       `<div class="time">${escapeHtml(s.created_at)}</div>`;
 
     // 点某个会话 → 切换到它（拉取并渲染它的全部消息）
@@ -139,14 +155,11 @@ async function loadSession(id) {
     );
   }
   for (const m of data.messages) appendMessage(m.role, m.content);
-  // 如果这个会话已经有线索卡片，补一条提示（刷新页面后也能看到状态）
-  const sessions = await api("/api/sessions").then((d) => d.sessions);
-  if (sessions.find((s) => s.id === id)?.has_lead) showLeadNotice();
   currentSessionId = id;
   closeDrawer();
 }
 
-/** 新建会话：后端建一条记录，聊天区回到干净状态 */
+/** 新建会话：后端建一条记录，聊天区回到干净状态，并把会话记进浏览器本地 */
 async function newChat() {
   const data = await api("/api/sessions", { method: "POST" });
   currentSessionId = data.id;
@@ -155,15 +168,22 @@ async function newChat() {
     "assistant",
     "您好！我是销售助理，很高兴为您服务。\n可以聊聊您想解决什么问题、大概的预算和时间安排吗？"
   );
+  // 记进本浏览器历史（这样下次打开页面，抽屉里还能找到这个会话）
+  const list = loadMySessions();
+  list.unshift({
+    id: data.id,
+    title: "新对话",
+    created_at: new Date().toLocaleString("zh-CN"),
+  });
+  saveMySessions(list);
   refreshSessionList();
   closeDrawer();
   msgInput.focus();
 }
 
-/** 刷新抽屉里的会话列表（带高亮当前会话） */
+/** 刷新抽屉里的会话列表（数据来自浏览器本地，带高亮当前会话） */
 async function refreshSessionList() {
-  const data = await api("/api/sessions");
-  renderSessions(data.sessions, currentSessionId);
+  renderSessions(loadMySessions(), currentSessionId);
 }
 
 /** 关闭左侧抽屉 */
@@ -196,10 +216,17 @@ async function sendMessage() {
     typing.remove(); // 去掉"正在输入"动画
     appendMessage("assistant", data.reply);
 
-    // 后端说这轮生成了线索卡片 → 提示用户 + 刷新会话列表的徽标
+    // 后端说这轮生成了线索卡片 → 提示用户
     if (data.lead) {
       showLeadNotice();
-      refreshSessionList();
+    }
+
+    // 如果是这个会话的第一句话，把会话标题更新成这句话的前 20 个字（存在浏览器本地）
+    const mySessions = loadMySessions();
+    const item = mySessions.find((s) => s.id === currentSessionId);
+    if (item && item.title === "新对话") {
+      item.title = content.slice(0, 20);
+      saveMySessions(mySessions);
     }
   } catch (err) {
     typing.remove();

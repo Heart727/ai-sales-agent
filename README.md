@@ -7,8 +7,9 @@
 - 💬 **网页聊天**：访客发消息，AI 实时回复；AI 主动询问 需求/预算/时间/联系方式 4 个关键问题
 - 🧠 **多轮对话记忆**：每个会话完整存进 SQLite，AI 每次回复都带上之前的所有对话
 - 📇 **线索卡片**：4 项信息集齐后 AI **自动**生成线索卡片；也可以点「结束对话」按钮手动生成（信息不齐时缺的字段标"未提供"）
+- 🔐 **登录保护**：访客聊天不需要登录；**线索页 /leads 必须登录才能看**（注册需邀请码，密码加盐哈希存储，登录状态存 cookie 令牌）
 - 📱 **移动端可用**：简洁中文界面，手机宽度下正常使用
-- 🗂️ **线索管理页** `/leads`：查看、删除所有线索
+- 🗂️ **线索管理页** `/leads`：登录后查看、删除所有线索；访客的历史会话只存在自己浏览器里，互相看不到
 
 ## 技术栈
 
@@ -23,12 +24,13 @@
 
 ```
 ai-sales-agent/
-├── main.py          # FastAPI 入口 + 全部 API 路由
-├── database.py      # 数据库层：建表、增删改查
+├── main.py          # FastAPI 入口 + 全部 API 路由（含登录接口和权限保护）
+├── database.py      # 数据库层：建表、增删改查（5 张表：会话/消息/线索/用户/令牌）
 ├── ai.py            # AI 逻辑：生成回复 + 提取线索 JSON
+├── auth.py          # 认证逻辑：密码加盐哈希、登录令牌、邀请码
 ├── config.py        # 读 .env 配置
-├── verify_api.py    # 一键自检脚本
-├── static/          # 前端页面（index.html 聊天页 / leads.html 线索页）
+├── verify_api.py    # 一键自检脚本（含登录权限检查）
+├── static/          # 前端（index.html 聊天页 / leads.html 线索页 / login.html 登录页）
 ├── requirements.txt # 依赖清单
 └── .env.example     # 配置模板
 ```
@@ -62,6 +64,9 @@ pip install -r requirements.txt
 DEEPSEEK_API_KEY=你的-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 DEEPSEEK_MODEL=deepseek-v4-pro
+
+# 注册邀请码：注册管理员账号时填这个码，自己设一个别人猜不到的
+AUTH_SIGNUP_CODE=我的邀请码-888
 ```
 
 > ⚠️ 模型名不要用 `deepseek-chat`——旧别名不会报错，但会被静默映射到弱模型，回答质量悄悄变差。
@@ -95,8 +100,9 @@ python verify_api.py
 1. 打开 http://127.0.0.1:8000/ ，页面会自动开始一个新对话
 2. 和 AI 聊天，试着先报预算、后报需求，最后问一句"我刚才说的预算是多少？"——AI 记得住，说明多轮记忆生效
 3. 当你说完 需求/预算/时间/联系方式 后，聊天区会弹出绿色提示条"✅ 已生成线索卡片"
-4. 打开 http://127.0.0.1:8000/leads ，能看到刚才生成的线索卡片，点「删除」可以删掉
-5. 手机上测试：按 F12 打开开发者工具 → 切换设备模拟（或直接手机访问同一局域网 IP），验证窄屏布局
+4. 打开 http://127.0.0.1:8000/leads ，会被**自动跳到登录页**（正常现象）→ 切到「注册」标签，填用户名、密码和邀请码（.env 里 `AUTH_SIGNUP_CODE` 的值）→ 注册成功自动进入线索页
+5. 在线索页能看到刚才生成的线索卡片，点「删除」可以删掉；点「登出」后再访问 /leads 又会被拦回登录页
+6. 手机上测试：按 F12 打开开发者工具 → 切换设备模拟（或直接手机访问同一局域网 IP），验证窄屏布局
 
 ### 数据库长什么样
 
@@ -129,12 +135,16 @@ python verify_api.py
 
 ## API 一览
 
-| 方法 | 路径 | 作用 |
-|---|---|---|
-| POST | /api/sessions | 新建会话 |
-| GET | /api/sessions | 会话列表（带"已生成线索"标记） |
-| GET | /api/sessions/{id}/messages | 某会话的全部消息 |
-| POST | /api/sessions/{id}/messages | 发消息 → 返回 AI 回复（可能同时生成线索） |
-| POST | /api/sessions/{id}/end | 手动结束对话，强制生成线索 |
-| GET | /api/leads | 线索列表 |
-| DELETE | /api/leads/{id} | 删除线索 |
+| 方法 | 路径 | 作用 | 权限 |
+|---|---|---|---|
+| POST | /api/auth/register | 注册（需邀请码，成功即登录） | 公开 |
+| POST | /api/auth/login | 登录 | 公开 |
+| POST | /api/auth/logout | 登出 | 公开 |
+| GET | /api/auth/me | 当前登录用户 | 公开（未登录返回 401） |
+| POST | /api/sessions | 新建会话 | 公开 |
+| GET | /api/sessions | 会话列表（老板视角） | 🔒 需登录 |
+| GET | /api/sessions/{id}/messages | 某会话的全部消息 | 公开 |
+| POST | /api/sessions/{id}/messages | 发消息 → 返回 AI 回复（可能同时生成线索） | 公开 |
+| POST | /api/sessions/{id}/end | 手动结束对话，强制生成线索 | 公开 |
+| GET | /api/leads | 线索列表 | 🔒 需登录 |
+| DELETE | /api/leads/{id} | 删除线索 | 🔒 需登录 |

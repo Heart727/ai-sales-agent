@@ -26,6 +26,11 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
 if DEEPSEEK_MODEL == "deepseek-chat":
     DEEPSEEK_MODEL = "deepseek-v4-pro"
 
+# ===== 登录注册配置 =====
+# 注册邀请码：注册新账号时必须填这个码。
+# 如果没有邀请码限制，任何人都能注册账号看线索，等于没锁门。
+AUTH_SIGNUP_CODE = os.getenv("AUTH_SIGNUP_CODE", "")
+
 # ===== 数据库配置 =====
 # SQLite 数据库就是一个文件，放在项目根目录下，叫 sales_agent.db
 # __file__ 是当前文件（config.py）的完整路径，dirname 取它所在的目录 = 项目根目录
