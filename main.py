@@ -10,7 +10,13 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+import logging
+import secrets
+import hmac
+import sqlite3
+import config
+import security
 
 import ai
 import auth
@@ -27,6 +33,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AI 销售助手", lifespan=lifespan)
+app.add_middleware(security.RequestGuard)
 
 # 挂载静态文件目录：浏览器访问 /static/style.css 就能拿到文件
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -66,18 +73,18 @@ def login_page():
 # ===== 请求体定义 =====
 # Pydantic 模型：FastAPI 会自动把前端传来的 JSON 校验成这个结构
 class ChatRequest(BaseModel):
-    content: str  # 访客发的消息内容
+    content: str = Field(min_length=1, max_length=config.MAX_MESSAGE_CHARS)  # 访客发的消息内容
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=2, max_length=20)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class RegisterRequest(BaseModel):
-    username: str
-    password: str
-    signup_code: str  # 注册邀请码（防止陌生人随便注册账号看线索）
+    username: str = Field(min_length=2, max_length=20)
+    password: str = Field(min_length=6, max_length=128)
+    signup_code: str = Field(max_length=256)  # 注册邀请码（防止陌生人随便注册账号看线索）
 
 
 # ==================== 登录认证相关 ====================
@@ -108,13 +115,15 @@ def _set_auth_cookie(response: Response, token: str) -> None:
         key=AUTH_COOKIE,
         value=token,
         max_age=30 * 24 * 3600,  # 30 天
+        secure=config.COOKIE_SECURE,
         httponly=True,           # 只有浏览器能携带，页面 JS 读不到（防 XSS 偷令牌）
-        samesite="lax",          # 防止跨站请求伪造（CSRF）
+        samesite="lax",          # 配合 RequestGuard 的来源校验
     )
 
 
 @app.post("/api/auth/register")
-def register(req: RegisterRequest, response: Response):
+def register(req: RegisterRequest, response: Response, request: Request):
+    rate_limit.check_auth_rate(rate_limit.get_client_ip(request), req.username)
     """
     注册新账号：
     1. 校验用户名/密码长度、邀请码是否正确、用户名是否被占用
@@ -130,14 +139,17 @@ def register(req: RegisterRequest, response: Response):
         raise HTTPException(status_code=400, detail="密码至少 6 位")
     if not AUTH_SIGNUP_CODE:
         raise HTTPException(status_code=400, detail="管理员未开放注册")
-    if req.signup_code.strip() != AUTH_SIGNUP_CODE:
+    if not hmac.compare_digest(req.signup_code.strip().encode(), AUTH_SIGNUP_CODE.encode()):
         raise HTTPException(status_code=400, detail="邀请码错误")
     if db.get_user_by_username(username) is not None:
         raise HTTPException(status_code=400, detail="用户名已被注册")
 
     salt = auth.new_salt()
     password_hash = auth.hash_password(password, salt)
-    user_id = db.create_user(username, password_hash, salt)
+    try:
+        user_id = db.create_user(username, password_hash, salt)
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="用户名已被注册")
 
     token = auth.generate_token()
     db.create_token(token, user_id)
@@ -146,11 +158,13 @@ def register(req: RegisterRequest, response: Response):
 
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest, response: Response):
+def login(req: LoginRequest, response: Response, request: Request):
+    rate_limit.check_auth_rate(rate_limit.get_client_ip(request), req.username)
     """登录：校验用户名密码，成功则发令牌写 cookie"""
     user = db.get_user_by_username(req.username.strip())
     # 用户名不存在时也走同样的校验流程，不让攻击者通过报错差异猜出哪个用户名存在
-    if user is None or not auth.verify_password(req.password, user["salt"], user["password_hash"]):
+    valid = auth.verify_password(req.password, user["salt"] if user else "0"*32, user["password_hash"] if user else "0"*64)
+    if user is None or not valid:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     token = auth.generate_token()
@@ -165,9 +179,9 @@ def logout(request: Request):
     token = request.cookies.get(AUTH_COOKIE)
     if token:
         db.delete_token(token)
-    response = Response()
-    response.delete_cookie(AUTH_COOKIE)
-    return {"ok": True}
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(AUTH_COOKIE, secure=config.COOKIE_SECURE, httponly=True, samesite="lax")
+    return response
 
 
 @app.get("/api/auth/me")
@@ -179,16 +193,21 @@ def me(user: dict = Depends(current_user)):
 # ==================== 会话相关接口 ====================
 
 @app.post("/api/sessions")
-def create_session(request: Request):
+def create_session(request: Request, response: Response):
     """
     新建一个会话，返回会话 id（前端拿到 id 后用它发消息）。
-    ⚠️ 防刷：每个 IP 每天建的会话数有限，超限 429 并自动封禁。
+    ⚠️ 防刷：每个 IP 每天建的会话数有限，超限返回 429。
     """
     ip = rate_limit.get_client_ip(request)
     rate_limit.check_ban(ip)
     rate_limit.check_session_creation(ip)
 
-    session_id = db.create_session()
+    token = request.cookies.get("visitor_token")
+    if security.owner_hash(token) is None:
+        token = secrets.token_hex(32)
+    session_id = db.create_session(owner_hash=security.owner_hash(token))
+    response.set_cookie("visitor_token", token, max_age=30*86400, httponly=True,
+                        secure=config.COOKIE_SECURE, samesite="lax")
     return {"id": session_id, "title": "新对话"}
 
 
@@ -206,7 +225,8 @@ def list_sessions(user: dict = Depends(current_user)):
 
 
 @app.get("/api/sessions/{session_id}/messages")
-def get_messages(session_id: int):
+def get_messages(session_id: int, request: Request):
+    require_session(session_id, request, allow_admin=True)
     """取某个会话的全部消息（按发送顺序），前端打开旧会话时用它恢复聊天记录"""
     if db.get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="会话不存在")
@@ -215,118 +235,99 @@ def get_messages(session_id: int):
 
 # ==================== 聊天核心接口 ====================
 
-@app.post("/api/sessions/{session_id}/messages")
-def send_message(session_id: int, req: ChatRequest, request: Request):
-    """
-    访客发一条消息，返回 AI 的回复。这是整个应用的核心接口，流程：
+def require_session(session_id: int, request: Request, allow_admin=False):
+    session = db.get_session(session_id)
+    owner = security.owner_hash(request.cookies.get("visitor_token"))
+    if session and owner and session.get("owner_hash") and hmac.compare_digest(owner, session["owner_hash"]):
+        return session
+    if session and allow_admin and db.get_user_by_token(request.cookies.get(AUTH_COOKIE, "")):
+        return session
+    # Same status for missing and inaccessible IDs; old sessions remain admin-only.
+    raise HTTPException(status_code=404, detail="会话不存在或无权访问")
 
-    0. 防刷检查（在一切业务逻辑和 AI 调用之前，被拒的请求不花一分钱 API 费）
-    1. 把访客的消息存进数据库
-    2. 取出这个会话的全部历史（多轮对话记忆的关键）
-    3. 带上历史调 DeepSeek，生成 AI 回复并入库
-    4. 如果这个会话还没有线索卡片，让 AI 判断 4 项信息是否集齐：
-       集齐 → 生成线索卡片入库，一起返回给前端
-    """
-    # ===== 防刷四道防线（顺序：封禁 → 分钟限流 → 日配额 → 全局兜底 → 会话上限）=====
+
+def admit(request):
     ip = rate_limit.get_client_ip(request)
     rate_limit.check_ban(ip)
     rate_limit.check_message_rate(ip)
-    rate_limit.check_daily_message_quota(ip)
     rate_limit.check_global_quota(ip)
+    rate_limit.check_daily_message_quota(ip)
 
+
+def save_lead(session_id, extracted):
+    if not isinstance(extracted, dict):
+        raise HTTPException(status_code=502, detail="线索提取暂时失败，请稍后重试")
+    fields = ("requirement", "budget", "timeline", "contact", "summary")
+    if any(not isinstance(extracted.get(k), str) or len(extracted[k]) > 4000 for k in fields):
+        raise HTTPException(status_code=502, detail="线索格式无效，请稍后重试")
+    db.create_lead(session_id, *(extracted[k] for k in fields))
+    return db.get_lead_by_session(session_id)
+
+
+def history_for(session_id, finalizing=False):
+    history = [{"role":m["role"],"content":m["content"]} for m in db.get_messages(session_id)]
+    if sum(len(m["content"]) for m in history) > config.MAX_HISTORY_CHARS + (8000 if finalizing else 0):
+        raise HTTPException(status_code=400, detail="对话内容已达上限，请新建对话")
+    return history
+
+
+@app.post("/api/sessions/{session_id}/messages")
+def send_message(session_id: int, req: ChatRequest, request: Request):
+    require_session(session_id, request)
     content = req.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="消息不能为空")
-    if db.get_session(session_id) is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    rate_limit.check_session_message_cap(session_id)
-
-    # 第 1 步：存访客消息；如果是第一句话，顺手把会话标题设成它的前 20 个字
-    db.add_message(session_id, "user", content)
-    if len(db.get_messages(session_id)) == 1:
-        db.update_session_title(session_id, content[:20])
-
-    # 第 2 步：取出全部历史，格式转成 ai.chat() 需要的 [{"role":..., "content":...}]
-    history = [
-        {"role": m["role"], "content": m["content"]}
-        for m in db.get_messages(session_id)
-    ]
-
-    # 第 3 步：调 AI 生成回复并入库
-    # 注意：AI 失败时访客消息已经存了（记录真实发生过的对话），但要把错误明确告诉前端，
-    # 不能装作成功——错误处理不静默失败。
-    try:
-        reply = ai.chat(history)
-    except Exception as e:
-        print(f"[错误] AI 生成回复失败（会话 {session_id}）: {e}")
-        raise HTTPException(status_code=502, detail=f"AI 服务暂时不可用：{e}") from e
-
-    db.add_message(session_id, "assistant", reply)
-
-    # 第 4 步：如果还没有线索卡片，让 AI 判断 4 项信息是否集齐
-    lead = db.get_lead_by_session(session_id)
-    if lead is None:
+    with security.lease(f"session:{session_id}"):
+        rate_limit.check_session_message_cap(session_id)
+        history = history_for(session_id)
+        if sum(len(m["content"]) for m in history) + len(content) > config.MAX_HISTORY_CHARS:
+            raise HTTPException(status_code=400, detail="对话内容已达上限，请新建对话")
+        admit(request)
+        db.add_message(session_id, "user", content)
+        if not history:
+            db.update_session_title(session_id, content[:20])
+        history.append({"role":"user", "content":content})
         try:
-            extracted = ai.extract_lead(history, strict=True)
-        except Exception as e:
-            # 提取失败不影响聊天（回复已经生成了），但必须打日志，方便排查
-            print(f"[错误] 线索提取失败（会话 {session_id}）: {e}")
-            extracted = None
-
-        if extracted:
-            db.create_lead(
-                session_id,
-                extracted["requirement"],
-                extracted["budget"],
-                extracted["timeline"],
-                extracted["contact"],
-                extracted["summary"],
-            )
-            lead = db.get_lead_by_session(session_id)
-
-    return {"reply": reply, "lead": lead}
+            reply = ai.chat(history)
+            if not reply or len(reply)>8000:
+                raise ValueError("Invalid AI reply")
+        except rate_limit.RateLimited:
+            raise
+        except Exception:
+            raise HTTPException(status_code=502, detail="AI 服务暂时不可用，请稍后重试")
+        db.add_message(session_id, "assistant", reply)
+        lead = db.get_lead_by_session(session_id)
+        warning = None
+        if lead is None:
+            try:
+                extracted = ai.extract_lead(history, strict=True)
+                if extracted:
+                    lead = save_lead(session_id, extracted)
+            except Exception as exc:
+                logging.getLogger(__name__).warning("Lead extraction failed session=%s type=%s", session_id, type(exc).__name__)
+                # Reply has already succeeded. Keep it and expose extraction failure.
+                warning = "回复已保存，线索整理暂未完成，可稍后点击结束对话重试。"
+        return {"reply":reply, "lead":lead, "warning":warning}
 
 
 @app.post("/api/sessions/{session_id}/end")
 def end_session(session_id: int, request: Request):
-    """
-    手动结束对话（兜底）：访客点「结束对话」按钮时调用。
-    不管 4 项信息齐不齐都生成线索卡片，缺的字段填"未提供"。
-    如果这个会话已经有卡片了，直接返回现有卡片（不会重复生成）。
-    ⚠️ 这个接口也要调 AI，同样过防刷检查（在 AI 调用之前拦截）。
-    """
-    ip = rate_limit.get_client_ip(request)
-    rate_limit.check_ban(ip)
-    rate_limit.check_message_rate(ip)
-    rate_limit.check_daily_message_quota(ip)
-
-    if db.get_session(session_id) is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
-
-    existing = db.get_lead_by_session(session_id)
-    if existing:
-        return {"lead": existing}
-
-    history = [
-        {"role": m["role"], "content": m["content"]}
-        for m in db.get_messages(session_id)
-    ]
-
-    try:
-        extracted = ai.extract_lead(history, strict=False)
-    except Exception as e:
-        print(f"[错误] 手动提取线索失败（会话 {session_id}）: {e}")
-        raise HTTPException(status_code=502, detail=f"AI 服务暂时不可用：{e}") from e
-
-    db.create_lead(
-        session_id,
-        extracted["requirement"],
-        extracted["budget"],
-        extracted["timeline"],
-        extracted["contact"],
-        extracted["summary"],
-    )
-    return {"lead": db.get_lead_by_session(session_id)}
+    require_session(session_id, request)
+    with security.lease(f"session:{session_id}"):
+        existing = db.get_lead_by_session(session_id)
+        if existing:
+            return {"lead":existing}
+        history = history_for(session_id, finalizing=True)
+        if not history:
+            raise HTTPException(status_code=400, detail="请先描述您的需求，再结束对话")
+        admit(request)
+        try:
+            extracted = ai.extract_lead(history, strict=False)
+        except rate_limit.RateLimited:
+            raise
+        except Exception:
+            raise HTTPException(status_code=502, detail="AI 服务暂时不可用，请稍后重试")
+        return {"lead":save_lead(session_id, extracted)}
 
 
 # ==================== 线索卡片接口 ====================
@@ -350,4 +351,4 @@ def delete_lead(lead_id: int, user: dict = Depends(current_user)):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000, proxy_headers=False)

@@ -16,6 +16,7 @@ DeepSeek 的接口是"OpenAI 兼容"的，openai SDK 只要把 base_url 指过�
 比自己拼 HTTP 请求省事、少出错。
 """
 import json
+from security import completion
 
 from openai import OpenAI
 
@@ -23,7 +24,7 @@ from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
 
 # 创建 DeepSeek 客户端（openai SDK 指向 DeepSeek 的地址）
 # 这里只创建一次，后面反复复用，不用每次都新建
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
+client = OpenAI(api_key=DEEPSEEK_API_KEY or "not-configured", base_url=DEEPSEEK_BASE_URL, timeout=45, max_retries=0)
 
 # ===== 销售助手的系统提示词 =====
 # 系统提示词的作用：告诉 AI "你是谁、你的任务是什么、什么话术"。
@@ -76,7 +77,7 @@ def chat(history: list[dict]) -> str:
     # AI 每一轮都能看到之前所有对话，这就是"多轮对话记忆"
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
 
-    resp = client.chat.completions.create(
+    resp = completion(client,
         model=DEEPSEEK_MODEL,
         messages=messages,
         temperature=0.7,    # 0.7：回复自然一些，不要死板（0 是最死板，1 是最放飞）
@@ -105,7 +106,7 @@ def extract_lead(messages: list[dict], strict: bool = True) -> dict | None:
         f"{'客户' if m['role'] == 'user' else '销售'}：{m['content']}" for m in messages
     )
 
-    resp = client.chat.completions.create(
+    resp = completion(client,
         model=DEEPSEEK_MODEL,
         messages=[
             {"role": "system", "content": "你负责从对话中提取客户信息，输出 JSON。"},

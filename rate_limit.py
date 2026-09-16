@@ -1,25 +1,6 @@
-"""
-防刷限流模块：在 AI 调用之前拦住恶意流量，保护 API 余额和数据库。
-
-攻击者怎么薅我们（威胁模型）：
-1. 写脚本对聊天接口狂发消息 → 每次消息都消耗 DeepSeek API 费用
-2. 不停新建会话 → 绕过单会话上限 + 把数据库撑爆
-3. 伪造 X-Forwarded-For 头 → 想骗过按 IP 计数（每换个假 IP 就重新计数）
-4. 用很多台机器/代理 IP 同时刷 → 单 IP 限制拦不住，需要全局兜底
-
-四道防线（商用标准）：
-1. 分钟限流：每 IP 每分钟最多 N 条消息（拦突发脚本）
-2. 日配额：每 IP 每天最多 N 条消息、N 个会话（拦慢速刷）
-3. 会话上限：每个会话最多 N 条消息（拦单会话无限聊）
-4. 全局兜底：全服务每天最多 N 条消息（拦分布式攻击）
-
-超限的后果：
-- 分钟限流超 → 返回 429（"发送太快"），不封禁（正常人连点太快不该被封）
-- 日配额超 → 自动封禁该 IP 24 小时（商用 WAF 的 auto-ban 做法）
-- 会话上限超 → 该会话不能再发消息，提示开新对话
-
-所有计数存 SQLite（rate_limits/bans 表）而不是内存：
-服务重启后计数不丢，攻击者无法靠"把服务搞重启"来绕过。
+"""Persistent request quotas and explicit bans.
+Quota exhaustion returns 429; reaching a quota alone never automatically bans an IP.
+Forwarded headers are accepted only from explicitly allowlisted proxy peers.
 """
 from datetime import datetime, timedelta
 
@@ -58,11 +39,26 @@ def get_client_ip(request: Request) -> str:
     才读 X-Forwarded-For 头，且只取链上第一个 IP（代理追加的真实来源）。
     直连部署时攻击者随手伪造 XFF 头是无效的——我们直接用 TCP 连接 IP。
     """
-    if TRUST_PROXY:
-        xff = request.headers.get("x-forwarded-for", "")
-        if xff:
-            return xff.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    from ipaddress import ip_address, ip_network
+    from config import TRUSTED_PROXY_IPS
+    peer = request.client.host if request.client else "unknown"
+    def trusted(value):
+        try:
+            return any(ip_address(value) in ip_network(net.strip()) for net in TRUSTED_PROXY_IPS if net.strip())
+        except ValueError:
+            return False
+    if TRUST_PROXY and trusted(peer):
+        chain = request.headers.get("x-forwarded-for", "").split(",")
+        for value in reversed(chain):
+            value = value.strip()
+            try:
+                value = str(ip_address(value))
+            except ValueError:
+                return peer
+            if not trusted(value):
+                return value
+    return peer
+
 
 
 def _window(prefix: str, ip: str) -> str:
@@ -109,39 +105,24 @@ def check_message_rate(ip: str) -> None:
 
 
 def check_daily_message_quota(ip: str) -> None:
-    """防线 2a：每 IP 每天消息总数（拦慢速刷），超限自动封禁"""
-    try:
-        _check_counter(
-            f"msg:day:{ip}", _window("msg:day", ip), RATE_MSG_PER_DAY,
-            "今日消息次数已达上限", 24 * 3600,
-        )
-    except RateLimited as e:
-        auto_ban(ip, "日消息配额超限")
-        raise e
+    # Exhausting an allowance is not proof of abuse (shared NAT / retrying clients).
+    _check_counter(f"msg:day:{ip}", _window("msg:day", ip), RATE_MSG_PER_DAY,
+                   "今日消息额度已用完，请明日再试", 3600)
 
 
 def check_session_creation(ip: str) -> None:
-    """防线 2b：每 IP 每天新建会话数，超限自动封禁"""
-    try:
-        _check_counter(
-            f"session:day:{ip}", _window("msg:day", ip), RATE_SESSIONS_PER_DAY,
-            "今日会话数量已达上限，请明天再来", 24 * 3600,
-        )
-    except RateLimited as e:
-        auto_ban(ip, "日建会话配额超限")
-        raise e
+    _check_counter(f"session:min:{ip}", _window("msg:min", ip), 5,
+                   "创建会话过于频繁", 60)
+    _check_counter(f"session:day:{ip}", _window("msg:day", ip), RATE_SESSIONS_PER_DAY,
+                   "今日会话数量已达上限", 3600)
+    _check_counter("global:session:day", _window("msg:day", ip), 1000,
+                   "今日会话额度已用完", 3600)
 
 
 def check_global_quota(ip: str) -> None:
-    """防线 4：全服务每天总消息数（拦分布式多 IP 攻击），超限封触发者"""
-    try:
-        _check_counter(
-            "global:msg:day", _window("msg:day", "global"), RATE_GLOBAL_MSG_PER_DAY,
-            "今日服务繁忙，请明天再来", 24 * 3600,
-        )
-    except RateLimited as e:
-        auto_ban(ip, "触发全局配额")  # 全局打爆时，把触发这个请求的 IP 也封掉
-        raise e
+    # Exhaustion is a service-wide condition, not evidence against this visitor.
+    _check_counter("global:msg:day", _window("msg:day", "global"),
+                   RATE_GLOBAL_MSG_PER_DAY, "今日服务额度已用完，请稍后再试", 3600)
 
 
 def check_session_message_cap(session_id: int) -> None:
@@ -155,3 +136,10 @@ def check_session_message_cap(session_id: int) -> None:
         raise RateLimited(
             "这个会话的消息已达上限，请点击「新对话」继续咨询", 0
         )
+
+
+def check_auth_rate(ip, username):
+    import hashlib
+    account = hashlib.sha256(username.strip().casefold().encode()).hexdigest()
+    _check_counter(f"auth:ip:{ip}", _window("msg:min",ip), 10, "登录尝试过于频繁", 60)
+    _check_counter(f"auth:user:{account}", _window("msg:min",ip), 10, "登录尝试过于频繁", 60)

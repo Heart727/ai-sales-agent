@@ -11,7 +11,12 @@ import sqlite3
 
 import database as db
 import rate_limit
-from config import DB_PATH
+import tempfile
+from pathlib import Path
+_test_directory = tempfile.TemporaryDirectory()
+DB_PATH = str(Path(_test_directory.name) / "rate-test.db")
+db.DB_PATH = DB_PATH
+db.init_db()
 
 # 测试专用 IP（RFC 5737 保留网段，永远不会是真实访客）
 TEST_IP = "192.0.2.99"
@@ -78,8 +83,8 @@ check("同一窗口内计数累加（第2次=2）", count2 == 2, f"实际 {count
 _, count3 = db.increment_rate(f"msg:min:{TEST_IP2}", "2026-08-19 10:01", 8)  # 切到 10:01 窗口
 check("窗口切换后重新计数（=1）", count3 == 1, f"实际 {count3}")
 
-# 4. 日配额超限 → 自动封禁
-print("\n[4] 日消息配额超限 → 自动封禁")
+# 4. 日配额拦截与显式封禁
+print("\n[4] 日配额拦截与显式封禁")
 banned = False
 try:
     for i in range(101):
@@ -87,9 +92,11 @@ try:
 except rate_limit.RateLimited:
     banned = True
 check("第 101 条抛 RateLimited", banned)
+check("日额度耗尽不会自动封禁", db.get_ban(TEST_IP) is None)
+rate_limit.auto_ban(TEST_IP, "手动测试封禁")
 ban = db.get_ban(TEST_IP)
-check("IP 已被自动封禁", ban is not None, "bans 表里没有记录")
-check("封禁原因已记录（审计用）", ban and "日" in ban["reason"], f"实际 {ban and ban['reason']}")
+check("显式封禁已记录", ban is not None, "bans 表里没有记录")
+check("封禁原因已记录（审计用）", ban and "封禁" in ban["reason"], f"实际 {ban and ban['reason']}")
 try:
     rate_limit.check_ban(TEST_IP)
     check("封禁中再访问被拒", False)
@@ -98,6 +105,13 @@ except rate_limit.RateLimited as e:
     check("提示带解封时间", "解除" in e.detail)
 
 # 5. 建会话配额：第 21 个会话被拒
+_original_creation = rate_limit.check_session_creation
+def _daily_creation(ip):
+    conn = db.get_conn()
+    conn.execute("DELETE FROM rate_limits WHERE key=?", (f"session:min:{ip}",))
+    conn.commit(); conn.close()
+    return _original_creation(ip)
+rate_limit.check_session_creation = _daily_creation
 print("\n[5] 日建会话配额")
 rejected = False
 try:

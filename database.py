@@ -20,7 +20,7 @@ def get_conn():
     获取数据库连接（每次操作新建一个连接，用完关闭）。
     这是 SQLite 的简单用法：SQLite 是单文件数据库，新建连接的开销很小。
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     # 关键设置：让查询结果支持"按列名取值"，例如 row["content"]
     # 不设置的话只能按位置取值 row[0]，代码可读性差
     conn.row_factory = sqlite3.Row
@@ -103,6 +103,16 @@ def init_db():
             );
             """
         )
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
+        if "owner_hash" not in columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN owner_hash TEXT")
+        conn.executescript("""
+            CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id, id);
+            CREATE TABLE IF NOT EXISTS security_leases (
+                token TEXT PRIMARY KEY, resource TEXT NOT NULL, expires REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS ai_budgets (
+                day TEXT PRIMARY KEY, calls INTEGER NOT NULL, units INTEGER NOT NULL);
+        """)
         conn.commit()
     finally:
         conn.close()
@@ -115,13 +125,13 @@ def _now():
 
 # ==================== 会话（sessions）相关操作 ====================
 
-def create_session(title: str = "新对话") -> int:
+def create_session(title: str = "新对话", owner_hash: str | None = None) -> int:
     """新建一个会话，返回新会话的 id（数据库自增生成）"""
     conn = get_conn()
     try:
         cur = conn.execute(
-            "INSERT INTO sessions (title, created_at) VALUES (?, ?)",
-            (title, _now()),
+            "INSERT INTO sessions (title, created_at, owner_hash) VALUES (?, ?, ?)",
+            (title, _now(), owner_hash),
         )
         conn.commit()
         return cur.lastrowid  # 刚插入那行的自增 id
@@ -303,7 +313,7 @@ def get_user_by_token(token: str) -> dict | None:
         row = conn.execute(
             """SELECT u.* FROM users u
                JOIN tokens t ON t.user_id = u.id
-               WHERE t.token = ?""",
+               WHERE t.token = ? AND t.created_at > datetime('now', 'localtime', '-30 days')""",
             (token,),
         ).fetchone()
         return dict(row) if row else None
@@ -394,5 +404,53 @@ def get_ban(ip: str) -> dict | None:
             conn.commit()
             return None
         return dict(row)
+    finally:
+        conn.close()
+
+
+# Short transactions only: never hold a SQLite write lock during an upstream call.
+def acquire_lease(resource, capacity=1):
+    import secrets
+    import time
+    conn = get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM security_leases WHERE expires < ?", (time.time(),))
+        count = conn.execute("SELECT count(*) FROM security_leases WHERE resource=?", (resource,)).fetchone()[0]
+        if count >= capacity:
+            conn.commit()
+            return None
+        token = secrets.token_hex(32)
+        conn.execute("INSERT INTO security_leases VALUES (?, ?, ?)", (token, resource, time.time()+300))
+        conn.commit()
+        return token
+    finally:
+        conn.close()
+
+
+def release_lease(token):
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM security_leases WHERE token=?", (token,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def reserve_ai_budget(units, max_calls, max_units):
+    from datetime import timezone
+    day = datetime.now(timezone.utc).date().isoformat()
+    conn = get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT calls, units FROM ai_budgets WHERE day=?", (day,)).fetchone()
+        calls, used = (row[0], row[1]) if row else (0, 0)
+        if calls+1 > max_calls or used+units > max_units:
+            conn.commit()
+            return False
+        conn.execute("INSERT INTO ai_budgets VALUES (?,?,?) ON CONFLICT(day) DO UPDATE SET calls=excluded.calls, units=excluded.units", (day,calls+1,used+units))
+        conn.execute("DELETE FROM ai_budgets WHERE day < date('now','-90 days')")
+        conn.commit()
+        return True
     finally:
         conn.close()

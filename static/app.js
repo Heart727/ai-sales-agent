@@ -15,6 +15,7 @@
  */
 
 // ===== 当前状态 =====
+let busy = false;
 let currentSessionId = null; // 当前正在聊的会话 id
 
 // ===== 页面元素（一次性取好，后面反复用） =====
@@ -136,7 +137,7 @@ function escapeHtml(str) {
 function showLeadNotice() {
   const notice = document.createElement("div");
   notice.className = "lead-notice";
-  notice.innerHTML = '✅ 已生成线索卡片，<a href="/leads">点此查看</a>';
+  notice.textContent = "需求已记录，我们会根据您提供的联系方式跟进。";
   chatArea.appendChild(notice);
   chatArea.scrollTop = chatArea.scrollHeight;
 }
@@ -145,6 +146,7 @@ function showLeadNotice() {
 
 /** 加载某个会话：拉它的全部消息渲染出来，并把它设为当前会话 */
 async function loadSession(id) {
+  if (busy) return;
   const data = await api(`/api/sessions/${id}/messages`);
   chatArea.innerHTML = "";
   // 空会话（还没说过话）也显示开场问候，和新建会话时的界面保持一致
@@ -161,6 +163,7 @@ async function loadSession(id) {
 
 /** 新建会话：后端建一条记录，聊天区回到干净状态，并把会话记进浏览器本地 */
 async function newChat() {
+  if (busy) return;
   const data = await api("/api/sessions", { method: "POST" });
   currentSessionId = data.id;
   chatArea.innerHTML = "";
@@ -195,13 +198,17 @@ function closeDrawer() {
 // ===== 发消息（核心流程） =====
 
 async function sendMessage() {
+  if (busy) return;
   const content = msgInput.value.trim();
   if (!content) return;
   if (!currentSessionId) return;
 
   // 界面先显示用户消息 + "正在输入"，再等后端返回
   msgInput.value = "";
+  busy = true;
   sendBtn.disabled = true;
+  document.getElementById("endBtn").disabled = true;
+  document.getElementById("newChatBtn").disabled = true;
   appendMessage("user", content);
   const typing = appendTyping();
 
@@ -213,6 +220,7 @@ async function sendMessage() {
       body: JSON.stringify({ content }),
     });
 
+    if (data.warning) showToast(data.warning);
     typing.remove(); // 去掉"正在输入"动画
     appendMessage("assistant", data.reply);
 
@@ -232,6 +240,9 @@ async function sendMessage() {
     typing.remove();
     showToast("发送失败：" + err.message);
   } finally {
+    busy = false;
+    document.getElementById("endBtn").disabled = false;
+    document.getElementById("newChatBtn").disabled = false;
     sendBtn.disabled = false; // 无论成功失败都要恢复按钮
     msgInput.focus();
   }
@@ -239,7 +250,11 @@ async function sendMessage() {
 
 /** 手动结束对话：强制生成线索卡片（AI 没自动集齐信息时用这个兜底） */
 async function endChat() {
-  if (!currentSessionId) return;
+  if (!currentSessionId || busy) return;
+  busy = true;
+  sendBtn.disabled = true;
+  document.getElementById("endBtn").disabled = true;
+  document.getElementById("newChatBtn").disabled = true;
   try {
     const data = await api(`/api/sessions/${currentSessionId}/end`, { method: "POST" });
     showLeadNotice();
@@ -247,6 +262,11 @@ async function endChat() {
     showToast("对话已结束，线索卡片已生成", "success");
   } catch (err) {
     showToast("结束对话失败：" + err.message);
+  } finally {
+    busy = false;
+    sendBtn.disabled = false;
+    document.getElementById("endBtn").disabled = false;
+    document.getElementById("newChatBtn").disabled = false;
   }
 }
 
@@ -265,7 +285,13 @@ document.getElementById("menuBtn").onclick = () => {
 drawerMask.onclick = closeDrawer;
 
 // ===== 页面打开时：自动开始一个新对话 =====
-newChat();
+(async () => {
+  const saved = loadMySessions();
+  if (saved.length) {
+    try { await loadSession(saved[0].id); return; } catch (err) { /* expired visitor cookie */ }
+  }
+  try { await newChat(); } catch (err) { showToast(err.message); }
+})();
 
 // 只有登录了的管理员才显示"线索管理"入口：
 // 调 /api/auth/me 试一下，能查到用户就说明浏览器里有登录令牌。

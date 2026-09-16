@@ -1,190 +1,75 @@
-# AI 销售助手 MVP
+# AI 销售助手
 
-小商家/自由职业者挂在官网或落地页的 AI 销售接待员。访客进站后 AI 负责第一轮对话——了解客户需求、预算、时间、联系方式，聊完自动整理成"线索卡片"存进数据库。老板打开线索页就能看到今天来了哪些潜在客户，不用一条条翻聊天记录。
-
-## 功能
-
-- 💬 **网页聊天**：访客发消息，AI 实时回复；AI 主动询问 需求/预算/时间/联系方式 4 个关键问题
-- 🧠 **多轮对话记忆**：每个会话完整存进 SQLite，AI 每次回复都带上之前的所有对话
-- 📇 **线索卡片**：4 项信息集齐后 AI **自动**生成线索卡片；也可以点「结束对话」按钮手动生成（信息不齐时缺的字段标"未提供"）
-- 🔐 **登录保护**：访客聊天不需要登录；**线索页 /leads 必须登录才能看**（注册需邀请码，密码加盐哈希存储，登录状态存 cookie 令牌）
-- 🛡️ **防刷限流**（商用标准四道防线）：每 IP 每分钟消息数、每天消息数、每天建会话数、每会话消息数 + 全局兜底；超限返回 429，日配额爆了自动封禁 IP 24 小时；计数存 SQLite 重启不丢
-- 📱 **移动端可用**：简洁中文界面，手机宽度下正常使用
-- 🗂️ **线索管理页** `/leads`：登录后查看、删除所有线索；访客的历史会话只存在自己浏览器里，互相看不到
-
-## 技术栈
-
-| 层 | 技术 | 说明 |
-|---|---|---|
-| 后端 | Python + FastAPI | 定义全部 API |
-| 数据库 | SQLite | Python 自带 sqlite3，零配置 |
-| AI | DeepSeek API | OpenAI 兼容接口，用 openai 官方 SDK 调用 |
-| 前端 | 原生 HTML/CSS/JS | 无框架，简单直接 |
-
-## 项目结构
-
-```
-ai-sales-agent/
-├── main.py          # FastAPI 入口 + 全部 API 路由（含登录、权限保护、限流接入）
-├── database.py      # 数据库层：建表、增删改查（7 张表：会话/消息/线索/用户/令牌/限流计数/封禁）
-├── ai.py            # AI 逻辑：生成回复 + 提取线索 JSON
-├── auth.py          # 认证逻辑：密码加盐哈希、登录令牌、邀请码
-├── rate_limit.py    # 防刷限流：四道防线 + 自动封禁 + IP 防伪造
-├── config.py        # 读 .env 配置
-├── verify_api.py    # 一键自检脚本（含登录权限 + 429 限流实测）
-├── test_rate_limit.py # 限流模块单元测试（零 AI 费用）
-├── static/          # 前端（index.html 聊天页 / leads.html 线索页 / login.html 登录页）
-├── requirements.txt # 依赖清单
-└── .env.example     # 配置模板
-```
+面向小商家和自由职业者的第一轮销售接待：访客描述需求，AI 收集需求、预算、时间、联系方式，生成跟进线索。FastAPI + SQLite + 原生 HTML/CSS/JS，DeepSeek 使用 OpenAI 兼容接口。
 
 ## 本地运行
 
-### 1. 准备环境（第一次需要）
-
 ```powershell
-# 进入项目目录
-cd ai-sales-agent
-
-# 创建虚拟环境（隔离项目依赖，不污染系统 Python）
 python -m venv .venv
-
-# 激活虚拟环境（Windows PowerShell）
-.venv\Scripts\Activate.ps1
-
-# 安装依赖
-pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+# 编辑 .env，填写自己的 DEEPSEEK_API_KEY 和随机 AUTH_SIGNUP_CODE
+.venv\Scripts\python.exe main.py
 ```
 
-> SQLite 是 Python 自带的，不用装；前端是原生 HTML，也不用装。
+已有 `.env` 请直接编辑，不要覆盖。聊天：http://127.0.0.1:8000/；管理员登录：http://127.0.0.1:8000/login；线索：http://127.0.0.1:8000/leads。
+注册仅限持有邀请码的员工，所有注册账号都能管理同一个商家的线索。不是多租户系统。邀请注册完成后可清空 `AUTH_SIGNUP_CODE` 并重启来关闭注册。
 
-### 2. 配置 API Key
+## 配置
 
-1. 复制配置模板：把 `.env.example` 复制一份，改名为 `.env`
-2. 打开 `.env`，填入你的 DeepSeek API Key（在 https://platform.deepseek.com 注册后获取）：
+- `DEEPSEEK_API_KEY`：仅保存在 .env/服务器环境变量，不交给浏览器。
+- `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1`。
+- `DEEPSEEK_MODEL`：使用你的 DeepSeek 账户实际支持的模型；不要把别名映射当作长期保证。
+- `DATABASE_PATH`：SQLite 文件绝对路径；默认项目目录的 sales_agent.db。
+- `COOKIE_SECURE=false`：仅本地 HTTP 调试；公网 HTTPS 必须 true。
+- `PUBLIC_ORIGIN`：公网完整 HTTPS 来源，例如 https://sales.example.com，不带路径。
+- `TRUST_PROXY=false`：默认忽略 XFF；Nginx 后使用 true 并显式配置 `TRUSTED_PROXY_IPS=127.0.0.1/32`。
+- `AI_MAX_CONCURRENT=4`、`AI_DAILY_CALLS=500`、`AI_DAILY_UNITS=200000`：每次真正调用模型前通过 SQLite 原子预留。聊天和提取分别计费计数，超时/失败也不退还预留量。日界为 UTC。
 
-```env
-DEEPSEEK_API_KEY=你的-key
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-DEEPSEEK_MODEL=deepseek-v4-pro
+`AI_DAILY_UNITS` 是 UTF-8 字节数、协议余量与最大输出 token 的保守合计，用于控制工作量，**不是精确 token 计费或人民币余额保证**。请同时在模型服务商账户配置消费限制及余额告警。SDK 自动重试已关闭，单次网络超时 45 秒。
 
-# 注册邀请码：注册管理员账号时填这个码，自己设一个别人猜不到的
-AUTH_SIGNUP_CODE=我的邀请码-888
+## 已实现的保护
 
-# ===== 防刷限流参数（不配就用默认值，商用部署建议按业务量调）=====
-# 每 IP 每分钟最多发几条消息（默认 8）
-RATE_MSG_PER_MINUTE=8
-# 每 IP 每天最多发几条消息（默认 100，超了自动封禁 24 小时）
-RATE_MSG_PER_DAY=100
-# 每 IP 每天最多新建几个会话（默认 20）
-RATE_SESSIONS_PER_DAY=20
-# 每个会话最多几条消息（默认 60）
-RATE_MSG_PER_SESSION=60
-# 全局兜底：整个服务每天最多多少条消息（默认 5000，防多 IP 分布式攻击）
-RATE_GLOBAL_MSG_PER_DAY=5000
-# 触发日配额后封禁时长（小时，默认 24）
-BAN_HOURS=24
-# 部署在 Nginx/云网关后面时设为 true（否则所有请求都会显示成网关 IP）
-TRUST_PROXY=false
-```
+- 随机访客 cookie（HttpOnly）绑定会话；读、发消息、结束都验证归属，管理员仅可额外读取历史。改 URL 中的 ID 不会获得别人数据。
+- 旧会话迁移后保留，但没有归属凭证，只对管理员开放；不会根据 localStorage 认领旧会话。
+- 登录/注册：每 IP、每用户名每分钟各 10 次，登录 cookie 服务端也检查 30 天过期，登出撤销令牌并清 cookie。
+- IP 消息限流/日配额、每日会话配额、单会话 60 条消息（包含双方），全局日请求上限；日配额或全局额度耗尽只返回 429，不自动封禁访客；显式封禁仍保留。
+- 建会话每 IP 每分钟 5 次、全局每天 1000 次；空对话不能生成线索。
+- 消息最多 2000 字符，累计输入历史最多 16000 字符（最终整理额外容纳最后一条最多 8000 字符的回复），请求体最多 32 KiB；每次回复仍携带完整历史，达到上限明确拒绝而不偷偷截断。
+- 同一会话同时只接受一个写入请求；共享 SQLite 中的租约限制 AI 并发。异常退出租约最多 300 秒过期；网络调用如果异常持续超过租期，不能把它当成严格的物理进程隔离，生产网关还需超时控制。
+- 跨站浏览器写请求被拒；错误响应不回传上游内部异常。已成功的回复不因提取失败而丢失，页面提示稍后重试整理。
 
-> ⚠️ 模型名不要用 `deepseek-chat`——旧别名不会报错，但会被静默映射到弱模型，回答质量悄悄变差。
-> ⚠️ `.env` 里是密钥，已被 .gitignore 排除，不会上传到 GitHub。
-
-### 3. 启动
+## 验证
 
 ```powershell
-python main.py
+.venv\Scripts\python.exe -X utf8 verify_api.py
 ```
 
-看到 `Uvicorn running on http://0.0.0.0:8000` 就成功了。打开浏览器访问：
+默认使用临时数据库和模拟 AI，运行安全/API 回归及限流检查，无 API 费用，不需要启动服务，不会修改业务数据。覆盖跨访客越权、认证、并发、预算耗尽、错误释放、迁移保留数据等。
 
-- 聊天页：http://127.0.0.1:8000/
-- 线索管理页：http://127.0.0.1:8000/leads
+人工验证：
+1. 无痕窗口聊天；另一独立浏览器访问该会话的 messages 接口，应为 404。
+2. 报齐四项信息，管理员登录后查看线索；重复结束只返回同一张卡片。
+3. 刷新页面恢复当前会话，不自动新建；等待回复期间不能重复发送或切换对话。
+4. 登出后 /api/leads 为 401，登录/注册两个标签互斥显示。
+5. 真正验证 DeepSeek：在本地聊天一次并检查回复、线索；此步骤会消耗你的 API 额度。
 
-## 测试方法
+不要删除 sales_agent.db 来解封或运行测试。升级前请用 SQLite backup 或停机复制备份文件；启动时只做增量建表/加列迁移。
 
-### 方式一：一键自检（推荐，30 秒）
+## 公网部署边界
 
-另开一个终端（保持服务运行），跑：
+代码提供应用层加固，**不等于完成生产部署或防住 DDoS**。本次没有部署任何云平台，也不保证平台免费或无需绑卡。
 
-```powershell
-python verify_api.py
+使用 Ubuntu + Nginx + HTTPS；应用只监听 127.0.0.1:8000，防火墙不要对公网开放 8000。用非 root 服务账号及 systemd 托管。启动命令：
+
+```sh
+.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --no-proxy-headers
 ```
 
-它会按真实流程打一遍全部接口：登录权限（未登录 401、错误邀请码 400、登出失效）→ 建会话 → 发消息（带全 4 项信息）→ 检查 AI 回复和**自动生成**的线索 → 多轮记忆 → 手动结束 → 删除线索 → 错误场景 → **限流实测（连发消息直到被 429 拦截）**。全部 `PASS` 且最后显示 `✅ 全部通过` 即后端正常。
+必须关闭 Uvicorn 自己的代理头重写，来源 IP 由应用的显式可信代理白名单处理。Nginx 需覆盖而非盲目保留外部 XFF（单层代理示例 `proxy_set_header X-Forwarded-For $remote_addr;`），转发 Host，设置请求体、连接数、请求速率和超时上限。多层 CDN 按实际拓扑配置信任边界，不能直接信任任意 XFF。
 
-> ⚠️ 跑自检时**不要同时在浏览器里聊天**——自检会消耗本机 IP 的限流配额，两边抢配额数字会对不上。
+上线还需：有效 TLS 证书、COOKIE_SECURE/PUBLIC_ORIGIN、云端 WAF/验证码接入（如有公网机器流量）、数据库备份和恢复演练、日志告警、数据保留与清理规则。SQLite 只适合单机共享本地磁盘部署；多台服务器应迁移数据库和分布式限流，不可每台各存一份配额。
 
-限流模块的专项单测（不调 AI、零费用）：
+## 文件
 
-```powershell
-python test_rate_limit.py
-```
-
-### 方式二：浏览器手动测试
-
-1. 打开 http://127.0.0.1:8000/ ，页面会自动开始一个新对话
-2. 和 AI 聊天，试着先报预算、后报需求，最后问一句"我刚才说的预算是多少？"——AI 记得住，说明多轮记忆生效
-3. 当你说完 需求/预算/时间/联系方式 后，聊天区会弹出绿色提示条"✅ 已生成线索卡片"
-4. 打开 http://127.0.0.1:8000/leads ，会被**自动跳到登录页**（正常现象）→ 切到「注册」标签，填用户名、密码和邀请码（.env 里 `AUTH_SIGNUP_CODE` 的值）→ 注册成功自动进入线索页
-5. 在线索页能看到刚才生成的线索卡片，点「删除」可以删掉；点「登出」后再访问 /leads 又会被拦回登录页
-6. 手机上测试：按 F12 打开开发者工具 → 切换设备模拟（或直接手机访问同一局域网 IP），验证窄屏布局
-
-### 数据库长什么样
-
-对话和线索都存在项目根目录的 `sales_agent.db`（自动生成）。可以用任意 SQLite 工具打开看 7 张表：`sessions`（会话）、`messages`（消息）、`leads`（线索卡片）、`users`（用户）、`tokens`（登录令牌）、`rate_limits`（限流计数）、`bans`（封禁记录）。
-
-### 防刷限流怎么工作的（大白话）
-
-聊天接口是公开的（访客不用登录），恶意脚本可以狂发消息刷掉你的 DeepSeek API 余额。四道防线按顺序拦：
-
-1. **分钟限流**：一个 IP 一分钟最多 8 条消息 → 超了返回 429"发送太快了"（正常人不误伤，连点太快的真人稍等一分钟就好）
-2. **日配额**：一个 IP 一天最多 100 条消息、20 个新会话 → 超了**自动封禁该 IP 24 小时**
-3. **会话上限**：一个会话最多 60 条消息 → 超了提示开新对话
-4. **全局兜底**：整个服务一天最多 5000 条消息 → 防多台机器换 IP 分布式攻击
-
-所有拦截都发生在**调 AI 之前**——被拒的请求不花一分钱 API 费。计数存在 SQLite 里，服务重启也不清零。部署在反向代理后面时记得把 `TRUST_PROXY` 设为 `true`（否则会把代理 IP 当成访客 IP，还会被伪造 X-Forwarded-For 头绕过）。
-
-> 💡 本地测试时如果不小心把自己 IP 封了（比如狂点发送），删掉 `sales_agent.db` 重启服务即可解封（⚠️ 部署环境千万别这么干，那里要等封禁自动到期）。
-
-## 部署到 Koyeb（免费，多数情况不绑卡）
-
-**方式一：一键部署（推荐）**
-
-点击下面的按钮，Koyeb 会自动填好仓库、启动命令、端口等所有配置：
-
-[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&builder=buildpack&repository=github.com/Heart727/ai-sales-agent&branch=main&name=ai-sales-agent&run_command=uvicorn%20main:app%20--host%200.0.0.0%20--port%20%24PORT&ports=8000;http;/)
-
-1. 用 GitHub 账号登录 Koyeb（https://app.koyeb.com），点击上面按钮进入创建页
-2. 确认配置没问题，点页面底部的 **Create Service / Deploy**
-3. 等构建完成（约 2~3 分钟），进服务 → **Settings → Environment variables**，添加 `DEEPSEEK_API_KEY`（复制 .env 里的值）→ Koyeb 会自动重新部署
-4. 打开 `https://ai-sales-agent-你的用户名.koyeb.app` 即可使用
-
-**方式二：手动创建**
-
-1. https://app.koyeb.com 登录 → 点 **Create Service** → 部署方式选 **GitHub** → 选 `ai-sales-agent` 仓库、`main` 分支
-2. Builder 保持 **Buildpack**；Run command 填 `uvicorn main:app --host 0.0.0.0 --port $PORT`；Ports 填 `8000`
-3. 实例规格选最小的（免费额度内）→ Deploy
-4. 部署后在 Settings → Environment variables 添加 `DEEPSEEK_API_KEY`，自动重新部署
-
-> ⚠️ Koyeb 免费版注意点（演示够用）：
-> - 免费版只给 1 个服务名额，实例 512MB 内存
-> - 服务闲置约 1 小时后休眠，下次访问要等 30~60 秒"冷启动"
-> - 免费版没有持久化磁盘：**重新部署时 SQLite 数据会被清空**（应用启动时自动重建空表，不影响使用，只是旧线索会消失）
-
-## API 一览
-
-| 方法 | 路径 | 作用 | 权限 |
-|---|---|---|---|
-| POST | /api/auth/register | 注册（需邀请码，成功即登录） | 公开 |
-| POST | /api/auth/login | 登录 | 公开 |
-| POST | /api/auth/logout | 登出 | 公开 |
-| GET | /api/auth/me | 当前登录用户 | 公开（未登录返回 401） |
-| POST | /api/sessions | 新建会话 | 公开 |
-| GET | /api/sessions | 会话列表（老板视角） | 🔒 需登录 |
-| GET | /api/sessions/{id}/messages | 某会话的全部消息 | 公开 |
-| POST | /api/sessions/{id}/messages | 发消息 → 返回 AI 回复（可能同时生成线索） | 公开 |
-| POST | /api/sessions/{id}/end | 手动结束对话，强制生成线索 | 公开 |
-| GET | /api/leads | 线索列表 | 🔒 需登录 |
-| DELETE | /api/leads/{id} | 删除线索 | 🔒 需登录 |
+main.py 路由；database.py 数据与迁移；ai.py 模型调用；auth.py 认证；rate_limit.py 请求限流；security.py 归属/请求体/AI 预算；config.py 配置；static/ 页面；test_security.py 与 test_rate_limit.py 隔离测试。

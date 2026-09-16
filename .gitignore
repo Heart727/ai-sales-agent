@@ -10,3 +10,8 @@
 # Python 缓存文件（自动生成，没用）
 __pycache__/
 *.pyc
+
+backups/
+*.log
+*.db-wal
+*.db-shm

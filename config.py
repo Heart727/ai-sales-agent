@@ -52,4 +52,15 @@ TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() in ("1", "true", "yes")
 # ===== 数据库配置 =====
 # SQLite 数据库就是一个文件，放在项目根目录下，叫 sales_agent.db
 # __file__ 是当前文件（config.py）的完整路径，dirname 取它所在的目录 = 项目根目录
-DB_PATH = os.path.join(os.path.dirname(__file__), "sales_agent.db")
+DB_PATH = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "sales_agent.db"))
+
+# Production security controls; explicit proxy allowlist, never trust arbitrary XFF.
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+PUBLIC_ORIGIN = os.getenv("PUBLIC_ORIGIN", "").rstrip("/")
+TRUSTED_PROXY_IPS = os.getenv("TRUSTED_PROXY_IPS", "").split(",")
+MAX_MESSAGE_CHARS = 2000
+MAX_HISTORY_CHARS = 16000
+MAX_BODY_BYTES = 32768
+AI_MAX_CONCURRENT = int(os.getenv("AI_MAX_CONCURRENT", "4"))
+AI_DAILY_UNITS = int(os.getenv("AI_DAILY_UNITS", "200000"))
+AI_DAILY_CALLS = int(os.getenv("AI_DAILY_CALLS", "500"))
