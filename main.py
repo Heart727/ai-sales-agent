@@ -11,10 +11,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-import logging
 import secrets
 import hmac
-import sqlite3
 import config
 import security
 
@@ -148,7 +146,7 @@ def register(req: RegisterRequest, response: Response, request: Request):
     password_hash = auth.hash_password(password, salt)
     try:
         user_id = db.create_user(username, password_hash, salt)
-    except sqlite3.IntegrityError:
+    except db.INTEGRITY_ERRORS:
         raise HTTPException(status_code=400, detail="用户名已被注册")
 
     token = auth.generate_token()
@@ -296,17 +294,10 @@ def send_message(session_id: int, req: ChatRequest, request: Request):
         except Exception:
             raise HTTPException(status_code=502, detail="AI 服务暂时不可用，请稍后重试")
         db.add_message(session_id, "assistant", reply)
+        # 线索只在访客点击“结束对话”时整理，避免一次请求连续调用两次模型。
+        # 这样公开演示的 Vercel Hobby Function 不会因第二次 AI 调用超时。
         lead = db.get_lead_by_session(session_id)
         warning = None
-        if lead is None:
-            try:
-                extracted = ai.extract_lead(history, strict=True)
-                if extracted:
-                    lead = save_lead(session_id, extracted)
-            except Exception as exc:
-                logging.getLogger(__name__).warning("Lead extraction failed session=%s type=%s", session_id, type(exc).__name__)
-                # Reply has already succeeded. Keep it and expose extraction failure.
-                warning = "回复已保存，线索整理暂未完成，可稍后点击结束对话重试。"
         return {"reply":reply, "lead":lead, "warning":warning}
 
 

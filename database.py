@@ -15,6 +15,28 @@ from datetime import datetime
 import config
 from config import DB_PATH
 
+try:
+    import turso_serverless
+except ImportError:  # 本地只用 SQLite 时允许不安装远程驱动
+    _REMOTE_INTEGRITY_ERRORS = ()
+else:
+    _REMOTE_INTEGRITY_ERRORS = (turso_serverless.IntegrityError,)
+
+INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + _REMOTE_INTEGRITY_ERRORS
+
+
+def _add_owner_hash_column(conn, columns):
+    """Add the migration column, tolerating a concurrent cold-start migration."""
+    if "owner_hash" in columns:
+        return
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN owner_hash TEXT")
+    except Exception as exc:
+        # Two Vercel instances can observe the old schema at the same time.
+        # Only swallow the specific duplicate-column race; other errors must surface.
+        if "duplicate column name: owner_hash" not in str(exc).lower():
+            raise
+
 
 def get_conn():
     """
@@ -124,8 +146,7 @@ def init_db():
             """
         )
         columns = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
-        if "owner_hash" not in columns:
-            conn.execute("ALTER TABLE sessions ADD COLUMN owner_hash TEXT")
+        _add_owner_hash_column(conn, columns)
         conn.executescript("""
             CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id, id);
             CREATE TABLE IF NOT EXISTS security_leases (

@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from fastapi.testclient import TestClient
+import turso_serverless
 import database as db
 import main
 import rate_limit
@@ -99,13 +100,28 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(self.a.post('/api/auth/logout').status_code,200)
         self.a.cookies.set('auth_token',token)
         self.assertEqual(self.a.get('/api/leads').status_code,401)
+
+    def test_remote_unique_conflict_returns_bad_request(self):
+        with patch.object(main, 'AUTH_SIGNUP_CODE', 'test-invite'), \
+             patch.object(db, 'get_user_by_username', return_value=None), \
+             patch.object(db, 'create_user', side_effect=turso_serverless.IntegrityError('duplicate')):
+            response = self.a.post('/api/auth/register', json={
+                'username': 'owner',
+                'password': 'long-password',
+                'signup_code': 'test-invite',
+            })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['detail'], '用户名已被注册')
     def test_normal_conversation_and_card_idempotency(self):
         sid=self.session()
         r=self.a.post(f'/api/sessions/{sid}/messages',json={'content':'hello'})
         self.assertEqual(r.status_code,200)
         self.assertEqual(len(self.a.get(f'/api/sessions/{sid}/messages').json()['messages']),2)
-        card=r.json()['lead']
-        self.assertEqual(self.a.post(f'/api/sessions/{sid}/end').json()['lead']['id'],card['id'])
+        self.assertIsNone(r.json()['lead'])
+        self.extract.assert_not_called()
+        card = self.a.post(f'/api/sessions/{sid}/end').json()['lead']
+        self.assertIsNotNone(card['id'])
         self.assertEqual(len(db.list_leads()),1)
     def test_old_sessions_not_claimed(self):
         sid=db.create_session()

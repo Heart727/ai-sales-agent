@@ -116,7 +116,7 @@ sudo install -m 750 deploy/backup.sh /usr/local/sbin/ai-sales-agent-backup
 
 ```sh
 turso auth login
-turso db create ai-sales-agent --tursodb
+turso db create ai-sales-agent
 turso db show ai-sales-agent --url
 turso db tokens create ai-sales-agent
 ```

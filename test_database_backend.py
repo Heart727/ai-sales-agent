@@ -31,6 +31,11 @@ class DatabaseBackendTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "TURSO_DATABASE_URL.*TURSO_AUTH_TOKEN"):
                 database.get_conn()
 
+        with patch.object(config, "TURSO_DATABASE_URL", ""), \
+             patch.object(config, "TURSO_AUTH_TOKEN", "secret"):
+            with self.assertRaisesRegex(RuntimeError, "TURSO_DATABASE_URL.*TURSO_AUTH_TOKEN"):
+                database.get_conn()
+
     def test_local_backend_still_returns_sqlite_connection(self):
         import tempfile
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -43,3 +48,21 @@ class DatabaseBackendTests(unittest.TestCase):
                     self.assertIs(conn.row_factory, sqlite3.Row)
                 finally:
                     conn.close()
+
+    def test_turso_row_supports_existing_mapping_access(self):
+        cursor = type(
+            "Cursor",
+            (),
+            {"description": (("id",), ("name",))},
+        )()
+        row = turso_serverless.Row(cursor, (1, "demo"))
+
+        self.assertEqual(row["name"], "demo")
+        self.assertEqual(dict(row), {"id": 1, "name": "demo"})
+
+    def test_duplicate_owner_hash_migration_is_tolerated(self):
+        class DuplicateColumnConnection:
+            def execute(self, sql):
+                raise sqlite3.OperationalError("duplicate column name: owner_hash")
+
+        database._add_owner_hash_column(DuplicateColumnConnection(), set())

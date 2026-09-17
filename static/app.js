@@ -133,7 +133,7 @@ function escapeHtml(str) {
     .replaceAll(">", "&gt;");
 }
 
-/** 显示"线索已生成"的绿色提示条（自动生成或手动结束成功后调用） */
+/** 显示"线索已生成"的绿色提示条（手动结束成功后调用） */
 function showLeadNotice() {
   const notice = document.createElement("div");
   notice.className = "lead-notice";
@@ -213,7 +213,7 @@ async function sendMessage() {
   const typing = appendTyping();
 
   try {
-    // 一个请求完成"存消息 → AI 回复 → 可能自动生成线索卡片"三件事
+    // 一个请求完成"存消息 → AI 回复"；点击结束对话时再生成线索卡片
     const data = await api(`/api/sessions/${currentSessionId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -248,7 +248,7 @@ async function sendMessage() {
   }
 }
 
-/** 手动结束对话：强制生成线索卡片（AI 没自动集齐信息时用这个兜底） */
+/** 手动结束对话：整理并保存线索卡片 */
 async function endChat() {
   if (!currentSessionId || busy) return;
   busy = true;
