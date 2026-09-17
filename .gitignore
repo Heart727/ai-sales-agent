@@ -1,5 +1,6 @@
 # Python 虚拟环境（本地装依赖用的，不要上传，新机器自己重建）
 .venv/
+.worktrees/
 
 # 环境变量文件（里面有 API Key，绝对不能上传）
 .env
