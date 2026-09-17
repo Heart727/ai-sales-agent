@@ -70,6 +70,41 @@ Copy-Item .env.example .env
 
 上线还需：有效 TLS 证书、COOKIE_SECURE/PUBLIC_ORIGIN、云端 WAF/验证码接入（如有公网机器流量）、数据库备份和恢复演练、日志告警、数据保留与清理规则。SQLite 只适合单机共享本地磁盘部署；多台服务器应迁移数据库和分布式限流，不可每台各存一份配额。
 
+## 腾讯云 Ubuntu 部署准备
+
+仓库内的 [`deploy/`](deploy/) 提供 systemd、Nginx 和 SQLite 备份模板。真正部署前需要一个域名解析到服务器公网 IP，以及 SSH 登录权限；本地环境不会自动连接或修改云服务器。
+
+服务器上的推荐目录和顺序：
+
+```sh
+sudo adduser --system --group --home /opt/ai-sales-agent ai-sales
+sudo mkdir -p /opt/ai-sales-agent /var/lib/ai-sales-agent /var/backups/ai-sales-agent
+sudo chown -R ai-sales:ai-sales /opt/ai-sales-agent /var/lib/ai-sales-agent
+git clone https://github.com/Heart727/ai-sales-agent.git /opt/ai-sales-agent
+cd /opt/ai-sales-agent
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+sudo cp .env.example /etc/ai-sales-agent.env
+sudo chmod 600 /etc/ai-sales-agent.env
+```
+
+编辑 `/etc/ai-sales-agent.env`：填写 API key 和随机邀请码，并取消注释 `DATABASE_PATH=/var/lib/ai-sales-agent/sales_agent.db`，让应用用户能写数据库。公网 HTTPS 后必须使用 `COOKIE_SECURE=true`、`PUBLIC_ORIGIN=https://你的域名`。如果 Nginx 在本机，配置 `TRUST_PROXY=true` 和 `TRUSTED_PROXY_IPS=127.0.0.1/32`，否则保持 false。
+
+```sh
+sudo cp deploy/ai-sales-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ai-sales-agent
+sudo systemctl status ai-sales-agent
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/ai-sales-agent
+# 将 SERVER_NAME 替换为真实域名，再建立 sites-enabled 链接
+sudo ln -s /etc/nginx/sites-available/ai-sales-agent /etc/nginx/sites-enabled/ai-sales-agent
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d 你的域名
+sudo install -m 750 deploy/backup.sh /usr/local/sbin/ai-sales-agent-backup
+```
+
+腾讯云防火墙只放行 22、80、443；不要放行 8000。部署前后用 `backup.sh` 做一次 SQLite 备份和完整性检查，升级时先备份、再拉代码、再重启服务。公网上线前还要配置云端 WAF/验证码、日志告警、消费告警和恢复演练。
+
 ## 文件
 
 main.py 路由；database.py 数据与迁移；ai.py 模型调用；auth.py 认证；rate_limit.py 请求限流；security.py 归属/请求体/AI 预算；config.py 配置；static/ 页面；test_security.py 与 test_rate_limit.py 隔离测试。
