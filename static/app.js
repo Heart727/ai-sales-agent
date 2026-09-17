@@ -74,6 +74,29 @@ function appendMessage(role, content) {
   chatArea.scrollTop = chatArea.scrollHeight; // 滚到最新消息
 }
 
+/** 新会话的欢迎状态：给访客一个明确的第一步，并提供高频问题快捷入口。 */
+function renderWelcome() {
+  chatArea.innerHTML =
+    '<div class="welcome-state" id="welcomeState">' +
+      '<div class="welcome-orb"><span>✦</span></div>' +
+      '<span class="section-kicker">FIRST CONTACT</span>' +
+      '<h2>你好，我来帮你<br><em>找到合适的下一步。</em></h2>' +
+      '<p>先告诉我你想解决什么问题，我会帮你梳理需求、预算和时间。</p>' +
+      '<div class="prompt-grid">' +
+        '<button class="prompt-chip" data-prompt="我想了解你们能提供什么服务">了解服务 <span>↗</span></button>' +
+        '<button class="prompt-chip" data-prompt="我有一个项目需求，想先聊聊">聊聊我的需求 <span>↗</span></button>' +
+        '<button class="prompt-chip" data-prompt="我想尽快上线，帮我规划一下时间">规划上线时间 <span>↗</span></button>' +
+      '</div>' +
+      '<div class="welcome-note"><span class="pulse-dot"></span> 通常 1 分钟内完成第一轮需求了解</div>' +
+    '</div>';
+  chatArea.querySelectorAll(".prompt-chip").forEach((button) => {
+    button.onclick = () => {
+      msgInput.value = button.dataset.prompt;
+      sendMessage();
+    };
+  });
+}
+
 /** 显示"AI 正在输入…"的小点动画，返回这个元素（回复到了就删掉它） */
 function appendTyping() {
   const msg = document.createElement("div");
@@ -151,10 +174,7 @@ async function loadSession(id) {
   chatArea.innerHTML = "";
   // 空会话（还没说过话）也显示开场问候，和新建会话时的界面保持一致
   if (data.messages.length === 0) {
-    appendMessage(
-      "assistant",
-      "您好！我是销售助理，很高兴为您服务。\n可以聊聊您想解决什么问题、大概的预算和时间安排吗？"
-    );
+    renderWelcome();
   }
   for (const m of data.messages) appendMessage(m.role, m.content);
   currentSessionId = id;
@@ -167,10 +187,7 @@ async function newChat() {
   const data = await api("/api/sessions", { method: "POST" });
   currentSessionId = data.id;
   chatArea.innerHTML = "";
-  appendMessage(
-    "assistant",
-    "您好！我是销售助理，很高兴为您服务。\n可以聊聊您想解决什么问题、大概的预算和时间安排吗？"
-  );
+  renderWelcome();
   // 记进本浏览器历史（这样下次打开页面，抽屉里还能找到这个会话）
   const list = loadMySessions();
   list.unshift({
@@ -209,6 +226,7 @@ async function sendMessage() {
   sendBtn.disabled = true;
   document.getElementById("endBtn").disabled = true;
   document.getElementById("newChatBtn").disabled = true;
+  document.getElementById("welcomeState")?.remove();
   appendMessage("user", content);
   const typing = appendTyping();
 
@@ -283,6 +301,13 @@ document.getElementById("menuBtn").onclick = () => {
   drawerMask.classList.add("open");
 };
 drawerMask.onclick = closeDrawer;
+
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+    e.preventDefault();
+    newChat();
+  }
+});
 
 // ===== 页面打开时：自动开始一个新对话 =====
 (async () => {

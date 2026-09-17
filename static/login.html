@@ -8,13 +8,26 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="auth-page">
 
     <!-- 居中的登录卡片 -->
     <main class="auth-wrap">
-        <div class="auth-card">
-            <h1>线索管理登录</h1>
-            <p class="auth-sub">访客聊天不需要登录；只有看线索的管理员需要</p>
+        <div class="auth-layout">
+            <section class="auth-showcase">
+                <div class="showcase-logo"><span class="brand-mark">✦</span><span>AI SALES DESK</span></div>
+                <div class="showcase-copy">
+                    <span class="section-kicker">PRIVATE WORKSPACE</span>
+                    <h1>把每一次<br><em>对话机会</em><br>变成下一步。</h1>
+                    <p>AI 负责第一轮沟通，你专注于真正值得跟进的客户。</p>
+                </div>
+                <div class="showcase-footer"><span class="showcase-line"></span><span>销售工作台 · 仅限团队成员</span></div>
+            </section>
+            <section class="auth-card">
+                <div class="auth-card-heading">
+                    <span class="section-kicker">TEAM ACCESS</span>
+                    <h2>欢迎回来</h2>
+                    <p class="auth-sub">登录后管理你的客户线索</p>
+                </div>
 
             <!-- 登录/注册 两个标签切换 -->
             <div class="auth-tabs">
@@ -40,7 +53,8 @@
             <!-- 错误提示区 -->
             <div id="authError"></div>
 
-            <a class="back-link" href="/">← 返回聊天</a>
+                <a class="back-link" href="/"><span>←</span> 返回访客对话</a>
+            </section>
         </div>
     </main>
 

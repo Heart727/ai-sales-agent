@@ -9,17 +9,25 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="chat-page">
 
     <!-- ===== 顶栏：标题 + 会话列表按钮 + 新对话 + 线索管理入口 ===== -->
     <header class="topbar">
         <div class="topbar-inner">
-            <!-- ☰ 按钮：打开左侧历史会话抽屉 -->
-            <button id="menuBtn" title="历史会话">☰</button>
-            <h1>AI 销售助手</h1>
+            <div class="brand-lockup">
+                <button class="icon-btn" id="menuBtn" title="历史会话" aria-label="打开历史会话">☰</button>
+                <span class="brand-mark" aria-hidden="true">✦</span>
+                <div class="brand-copy">
+                    <span class="eyebrow">AI SALES DESK</span>
+                    <h1>智能销售助手</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <span class="online-pill"><span></span>在线接待</span>
             <!-- 线索管理入口：默认隐藏，只有登录了的管理员才显示（访客不需要看到它） -->
             <a class="btn primary" id="leadsLink" href="/leads" hidden>线索管理</a>
-            <button id="newChatBtn">新对话</button>
+                <button class="btn ghost" id="newChatBtn">新对话 <span class="shortcut">⌘ N</span></button>
+            </div>
         </div>
     </header>
 
@@ -32,17 +40,21 @@
     </aside>
 
     <!-- ===== 聊天区：消息由 app.js 动态渲染 ===== -->
-    <main class="chat-area" id="chatArea"></main>
+    <main class="chat-area" id="chatArea" aria-live="polite"></main>
 
     <!-- ===== 底部输入栏 ===== -->
     <div class="composer">
         <div class="composer-inner">
             <!-- 结束对话按钮：手动生成线索卡片（AI 没自动生成时兜底） -->
-            <button id="endBtn" title="结束对话并生成线索">结束对话</button>
-            <!-- 输入框：按回车发送 -->
-            <input id="msgInput" type="text" placeholder="输入消息，按回车发送…" autocomplete="off">
-            <button id="sendBtn">发送</button>
+            <button class="composer-more" id="endBtn" title="结束对话并生成线索">完成接待</button>
+            <div class="composer-input-wrap">
+                <span class="composer-spark" aria-hidden="true">✦</span>
+                <!-- 输入框：按回车发送 -->
+                <input id="msgInput" type="text" placeholder="告诉我你的需求，按 Enter 发送…" autocomplete="off">
+            </div>
+            <button class="send-btn" id="sendBtn" aria-label="发送消息">发送 <span>↗</span></button>
         </div>
+        <p class="composer-hint">AI 会帮你梳理需求、预算和时间，结束后生成跟进摘要</p>
     </div>
 
     <!-- 错误/成功提示条 -->

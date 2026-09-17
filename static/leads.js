@@ -13,6 +13,8 @@
  */
 
 const leadsWrap = document.getElementById("leadsWrap");
+const leadGrid = document.getElementById("leadGrid");
+const leadCount = document.getElementById("leadCount");
 const toast = document.getElementById("toast");
 const userName = document.getElementById("userName");
 const logoutBtn = document.getElementById("logoutBtn");
@@ -78,14 +80,16 @@ async function loadLeads() {
   try {
     const data = await api("/api/leads");
     if (data.leads.length === 0) {
-      leadsWrap.innerHTML =
-        '<div class="empty-state">还没有线索。<br>去「返回对话」里和客户聊一聊，聊完线索会自动出现在这里。</div>';
+      leadCount.textContent = "0";
+      leadGrid.innerHTML =
+        '<div class="empty-state empty-card"><div class="empty-icon">✦</div><strong>还没有线索</strong><span>返回对话页和客户聊一聊，完成接待后线索会出现在这里。</span><a class="btn primary" href="/">开始一轮接待</a></div>';
       return;
     }
-    leadsWrap.innerHTML = data.leads.map(cardHtml).join("");
+    leadCount.textContent = data.leads.length;
+    leadGrid.innerHTML = data.leads.map(cardHtml).join("");
 
     // 给每张卡片的删除按钮绑事件
-    leadsWrap.querySelectorAll(".lead-card").forEach((card) => {
+    leadGrid.querySelectorAll(".lead-card").forEach((card) => {
       card.querySelector(".delete-btn").onclick = () => deleteLead(card);
     });
   } catch (err) {
@@ -105,9 +109,10 @@ async function deleteLead(card) {
   try {
     await api(`/api/leads/${id}`, { method: "DELETE" });
     card.remove(); // 从页面上拿掉这张卡片
+    leadCount.textContent = String(Math.max(0, Number(leadCount.textContent) - 1));
     showToast("已删除", "success");
     // 删光了就重新渲染，显示空状态提示
-    if (leadsWrap.querySelectorAll(".lead-card").length === 0) loadLeads();
+    if (leadGrid.querySelectorAll(".lead-card").length === 0) loadLeads();
   } catch (err) {
     if (err.status === 401) {
       location.href = "/login";

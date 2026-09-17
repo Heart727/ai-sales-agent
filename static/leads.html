@@ -9,21 +9,46 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="leads-page-shell">
 
     <!-- ===== 顶栏：返回聊天页 + 当前用户 + 登出 ===== -->
     <header class="topbar">
         <div class="topbar-inner">
-            <h1>线索管理</h1>
-            <a class="btn" href="/">返回对话</a>
-            <span id="userName"></span>
-            <button id="logoutBtn">登出</button>
+            <div class="brand-lockup">
+                <span class="brand-mark" aria-hidden="true">✦</span>
+                <div class="brand-copy">
+                    <span class="eyebrow">AI SALES DESK</span>
+                    <h1>线索工作台</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <span class="user-pill"><span class="user-dot"></span><span id="userName"></span></span>
+                <a class="btn ghost" href="/">返回对话</a>
+                <button class="btn ghost" id="logoutBtn">退出登录</button>
+            </div>
         </div>
     </header>
 
     <!-- 线索卡片列表由 leads.js 动态渲染 -->
     <main class="leads-wrap container" id="leadsWrap">
-        <div class="empty-state">加载中…</div>
+        <section class="page-intro">
+            <div>
+                <span class="section-kicker">PIPELINE OVERVIEW</span>
+                <h2>客户线索</h2>
+                <p>每一次对话，都会沉淀成下一次跟进的起点。</p>
+            </div>
+            <div class="lead-total">
+                <strong id="leadCount">—</strong>
+                <span>已收集线索</span>
+            </div>
+        </section>
+        <div class="leads-toolbar">
+            <span class="toolbar-label"><span class="pulse-dot"></span>全部线索</span>
+            <span class="toolbar-note">按最新生成时间排序</span>
+        </div>
+        <div class="lead-grid" id="leadGrid">
+            <div class="empty-state">加载中…</div>
+        </div>
     </main>
 
     <!-- 错误/成功提示条 -->
