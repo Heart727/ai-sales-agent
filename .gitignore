@@ -16,3 +16,5 @@ backups/
 *.log
 *.db-wal
 *.db-shm
+.vercel
+.env*
