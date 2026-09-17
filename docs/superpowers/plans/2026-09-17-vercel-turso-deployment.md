@@ -58,7 +58,7 @@ def test_get_conn_rejects_partial_turso_credentials():
 
 - [ ] **Step 2: 运行失败测试**
 
-Run: `.venv\\Scripts\\python.exe -m pytest test_database_backend.py -q`
+Run: `.venv\\Scripts\\python.exe -m unittest -v test_database_backend`
 
 Expected: FAIL，因为 `database.get_conn()` 还只会调用本地 `sqlite3.connect()`，且配置模块没有 Turso 配置。
 
@@ -93,7 +93,7 @@ def get_conn():
 
 - [ ] **Step 4: 运行连接测试和原有回归**
 
-Run: `.venv\\Scripts\\python.exe -m pytest test_database_backend.py -q`
+Run: `.venv\\Scripts\\python.exe -m unittest -v test_database_backend`
 
 Expected: PASS，覆盖远程选择、行工厂和部分凭证拒绝。
 
@@ -135,7 +135,7 @@ def test_vercel_json_targets_app_with_sixty_second_limit():
 
 - [ ] **Step 2: 运行失败测试**
 
-Run: `.venv\\Scripts\\python.exe -m pytest test_vercel_config.py -q`
+Run: `.venv\\Scripts\\python.exe -m unittest -v test_vercel_config`
 
 Expected: FAIL，因为入口和 `vercel.json` 尚不存在。
 
@@ -165,7 +165,7 @@ __all__ = ["app"]
 
 - [ ] **Step 4: 运行配置测试和 Python 编译**
 
-Run: `.venv\\Scripts\\python.exe -m pytest test_vercel_config.py -q`
+Run: `.venv\\Scripts\\python.exe -m unittest -v test_vercel_config`
 
 Expected: PASS。
 
@@ -198,7 +198,7 @@ def test_readme_has_vercel_turso_setup_steps():
 
 - [ ] **Step 2: 运行失败测试**
 
-Run: `.venv\\Scripts\\python.exe -m pytest test_docs.py -q`
+Run: `.venv\\Scripts\\python.exe -m unittest -v test_docs`
 
 Expected: FAIL，因为 README 还没有 Turso/Vercel 操作步骤。
 
@@ -210,7 +210,7 @@ Expected: FAIL，因为 README 还没有 Turso/Vercel 操作步骤。
 
 - [ ] **Step 4: 运行文档测试和完整验证**
 
-Run: `.venv\\Scripts\\python.exe -m pytest test_docs.py -q`
+Run: `.venv\\Scripts\\python.exe -m unittest -v test_docs`
 
 Expected: PASS。
 
@@ -247,7 +247,7 @@ Run: `.venv\\Scripts\\python.exe -X utf8 verify_api.py`
 
 Expected: exit code 0，25 + 18 项检查通过，无真实 AI 请求。
 
-Run: `.venv\\Scripts\\python.exe -m pytest test_database_backend.py test_vercel_config.py test_docs.py -q`
+Run: `.venv\\Scripts\\python.exe -m unittest -v test_database_backend test_vercel_config test_docs`
 
 Expected: all new tests pass。
 

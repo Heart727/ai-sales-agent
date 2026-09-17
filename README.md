@@ -1,6 +1,6 @@
 # AI 销售助手
 
-面向小商家和自由职业者的第一轮销售接待：访客描述需求，AI 收集需求、预算、时间、联系方式，生成跟进线索。FastAPI + SQLite + 原生 HTML/CSS/JS，DeepSeek 使用 OpenAI 兼容接口。
+面向小商家和自由职业者的第一轮销售接待：访客描述需求，AI 收集需求、预算、时间、联系方式，生成跟进线索。FastAPI + SQLite/Turso + 原生 HTML/CSS/JS，DeepSeek 使用 OpenAI 兼容接口。
 
 ## 本地运行
 
@@ -21,6 +21,7 @@ Copy-Item .env.example .env
 - `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1`。
 - `DEEPSEEK_MODEL`：使用你的 DeepSeek 账户实际支持的模型；不要把别名映射当作长期保证。
 - `DATABASE_PATH`：SQLite 文件绝对路径；默认项目目录的 sales_agent.db。
+- `TURSO_DATABASE_URL`、`TURSO_AUTH_TOKEN`：公开部署时同时填写，应用会通过 `turso_serverless` 访问远程 Turso；只填一项会拒绝连接。本地开发两项都留空。
 - `COOKIE_SECURE=false`：仅本地 HTTP 调试；公网 HTTPS 必须 true。
 - `PUBLIC_ORIGIN`：公网完整 HTTPS 来源，例如 https://sales.example.com，不带路径。
 - `TRUST_PROXY=false`：默认忽略 XFF；Nginx 后使用 true 并显式配置 `TRUSTED_PROXY_IPS=127.0.0.1/32`。
@@ -104,6 +105,56 @@ sudo install -m 750 deploy/backup.sh /usr/local/sbin/ai-sales-agent-backup
 ```
 
 腾讯云防火墙只放行 22、80、443；不要放行 8000。部署前后用 `backup.sh` 做一次 SQLite 备份和完整性检查，升级时先备份、再拉代码、再重启服务。公网上线前还要配置云端 WAF/验证码、日志告警、消费告警和恢复演练。
+
+## 面试官公开演示：Vercel + Turso
+
+没有云服务器时，推荐用 Vercel 发布页面和 FastAPI，用 Turso 保存会话、消息、用户、线索和限流数据。Vercel 的公开地址适合作品集和面试展示；线上不要设置 `DATABASE_PATH`，否则会退回本地文件，不能作为可靠的业务数据库。
+
+### 1. 创建 Turso 数据库
+
+先安装并登录 [Turso CLI](https://docs.turso.tech/cli/introduction)，然后执行：
+
+```sh
+turso auth login
+turso db create ai-sales-agent --tursodb
+turso db show ai-sales-agent --url
+turso db tokens create ai-sales-agent
+```
+
+保存命令输出的数据库 URL 和 token。它们只填写到 Vercel 环境变量，不要写入 `.env.example`、GitHub 或截图。
+
+### 2. 导入 Vercel
+
+1. 打开 [Vercel](https://vercel.com/)，用 GitHub 登录并导入 `Heart727/ai-sales-agent`。
+2. Framework Preset 保持自动识别，Root Directory 使用仓库根目录，不需要配置 Build Command。
+3. 在 Project Settings → Environment Variables 中为 Production 填写：
+
+```text
+DEEPSEEK_API_KEY=你的 DeepSeek key
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_MODEL=deepseek-v4-pro
+AUTH_SIGNUP_CODE=随机且难猜的邀请码
+TURSO_DATABASE_URL=turso db show 输出的 URL
+TURSO_AUTH_TOKEN=turso db tokens create 输出的 token
+COOKIE_SECURE=true
+PUBLIC_ORIGIN=https://你的项目名.vercel.app
+```
+
+不要在线上配置 `DATABASE_PATH`。`PUBLIC_ORIGIN` 必须是最终 Vercel 地址，不带路径；如果项目地址发生变化，记得同步修改它并重新部署。
+
+### 3. 给面试官的验证路径
+
+部署完成后依次验证：
+
+1. 打开首页，访客无需登录即可新建会话并发送一条消息。
+2. 刷新页面，确认当前会话仍能恢复；在另一浏览器打开同一个会话 ID 应不能读取消息。
+3. 访问 `/login`，用 `AUTH_SIGNUP_CODE` 注册管理员账号。
+4. 回到聊天页完成需求、预算、时间和联系方式，访问 `/leads` 查看线索卡片。
+5. 退出登录后访问 `/api/leads` 应返回 401；再登录可以继续查看线索。
+
+线上首次聊天会消耗 DeepSeek 额度。面试演示请使用虚构客户信息，不要录入真实姓名、电话、微信或邮箱；定期在 Turso 中清理演示线索。
+
+Vercel Function 没有常驻进程，Turso 远程数据库是线上持久化边界。这个方案适合作品集演示和小规模面试访问，不等于完整生产部署；正式商用还需要平台账单上限、WAF、日志告警、备份恢复和数据保留策略。
 
 ## 文件
 

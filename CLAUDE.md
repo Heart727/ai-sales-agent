@@ -8,5 +8,6 @@ FastAPI + SQLite + 原生前端，DeepSeek API。访客免登录聊天，邀请�
 - 模型调用统一经过 security.completion 的持久化预算和并发保护。
 - 登录、注册、结束对话、新建会话也属于防刷范围。
 - 公网需要 HTTPS、网关限流、可信代理白名单、备份监控；不能仅凭应用层测试就声称达到完整商用安全。
+- Vercel 线上同时配置 `TURSO_DATABASE_URL` 与 `TURSO_AUTH_TOKEN` 使用远程 Turso；两项都为空才使用本地 SQLite，线上不能依赖本地数据库文件。
 - 密钥只在环境变量/.env，不输出、不提交。
 - 具体运行、配置及安全边界见 README.md。
