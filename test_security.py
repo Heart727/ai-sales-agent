@@ -120,8 +120,10 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(len(self.a.get(f'/api/sessions/{sid}/messages').json()['messages']),2)
         self.assertIsNone(r.json()['lead'])
         self.extract.assert_not_called()
+        self.chat.assert_called_once()
         card = self.a.post(f'/api/sessions/{sid}/end').json()['lead']
         self.assertIsNotNone(card['id'])
+        self.chat.assert_called_once()
         self.assertEqual(len(db.list_leads()),1)
     def test_old_sessions_not_claimed(self):
         sid=db.create_session()

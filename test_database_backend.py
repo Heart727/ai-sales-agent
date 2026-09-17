@@ -60,9 +60,29 @@ class DatabaseBackendTests(unittest.TestCase):
         self.assertEqual(row["name"], "demo")
         self.assertEqual(dict(row), {"id": 1, "name": "demo"})
 
+    def test_local_unique_constraint_raises_database_integrity_error(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(config, "TURSO_DATABASE_URL", ""), \
+                 patch.object(config, "TURSO_AUTH_TOKEN", ""), \
+                 patch.object(database, "DB_PATH", f"{temp_dir}/local.db"):
+                database.init_db()
+                database.create_user("owner", "hash", "salt")
+                with self.assertRaises(database.INTEGRITY_ERRORS):
+                    database.create_user("owner", "hash2", "salt2")
+
     def test_duplicate_owner_hash_migration_is_tolerated(self):
         class DuplicateColumnConnection:
             def execute(self, sql):
                 raise sqlite3.OperationalError("duplicate column name: owner_hash")
 
         database._add_owner_hash_column(DuplicateColumnConnection(), set())
+
+    def test_unrelated_owner_hash_migration_error_is_not_swallowed(self):
+        class BrokenConnection:
+            def execute(self, sql):
+                raise RuntimeError("database is unavailable")
+
+        with self.assertRaisesRegex(RuntimeError, "database is unavailable"):
+            database._add_owner_hash_column(BrokenConnection(), set())
