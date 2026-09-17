@@ -12,14 +12,34 @@ Python 自带 sqlite3 模块就能操作，不需要安装和启动任何数据�
 import sqlite3
 from datetime import datetime
 
+import config
 from config import DB_PATH
 
 
 def get_conn():
     """
     获取数据库连接（每次操作新建一个连接，用完关闭）。
-    这是 SQLite 的简单用法：SQLite 是单文件数据库，新建连接的开销很小。
+
+    本地默认使用 SQLite 文件；在 Vercel 等无状态环境中，如果同时配置
+    Turso URL 和 token，则通过 HTTP 连接远程数据库。两项只配置一项时
+    立即报错，避免线上静默写入临时本地文件。
     """
+    has_url = bool(config.TURSO_DATABASE_URL)
+    has_token = bool(config.TURSO_AUTH_TOKEN)
+    if has_url != has_token:
+        raise RuntimeError(
+            "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be configured together"
+        )
+    if has_url:
+        import turso_serverless
+
+        conn = turso_serverless.connect(
+            config.TURSO_DATABASE_URL,
+            auth_token=config.TURSO_AUTH_TOKEN,
+        )
+        conn.row_factory = turso_serverless.Row
+        return conn
+
     conn = sqlite3.connect(DB_PATH, timeout=10)
     # 关键设置：让查询结果支持"按列名取值"，例如 row["content"]
     # 不设置的话只能按位置取值 row[0]，代码可读性差

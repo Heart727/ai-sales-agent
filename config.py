@@ -54,6 +54,10 @@ TRUST_PROXY = os.getenv("TRUST_PROXY", "false").lower() in ("1", "true", "yes")
 # __file__ 是当前文件（config.py）的完整路径，dirname 取它所在的目录 = 项目根目录
 DB_PATH = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "sales_agent.db"))
 
+# Vercel 等无状态环境使用 Turso 远程数据库；本地没有这两项时继续使用 SQLite 文件。
+TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "").strip()
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "").strip()
+
 # Production security controls; explicit proxy allowlist, never trust arbitrary XFF.
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 PUBLIC_ORIGIN = os.getenv("PUBLIC_ORIGIN", "").rstrip("/")
